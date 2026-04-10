@@ -1,0 +1,154 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "#000000",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 0,
+  "id": null,
+  "iteration": 1624642575019,
+  "links": [
+    {
+      "title": "Open Bull Board",
+      "type": "link",
+      "url": "${bull_board_url}",
+      "includeVars": true,
+      "keepTime": false
+    }
+  ],
+  "panels": [
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "interval": null,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}},
+      "targets": [
+        {"expr": "sum(rate(ragg_job_processed_total[5m]))", "format": "time_series", "instant": false}
+      ],
+      "title": "RAG Jobs Processed (rate)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "interval": null,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}},
+      "targets": [
+        {"expr": "sum(rate(ragg_job_failed_total[5m]))", "format": "time_series", "instant": false}
+      ],
+      "title": "RAG Jobs Failed (rate)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 8},
+      "id": 3,
+      "interval": null,
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}},
+      "targets": [
+        {
+          "expr": "(sum(rate(ragg_job_failed_total[5m])) / sum(rate(ragg_job_processed_total[5m]))) * 100",
+          "format": "time_series",
+          "instant": false
+        }
+      ],
+      "title": "Failure Rate (%)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 8},
+      "id": 4,
+      "interval": null,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(ragg_job_duration_seconds_bucket[5m])) by (le))",
+          "format": "time_series",
+          "instant": false
+        },
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(ragg_job_duration_seconds_bucket[5m])) by (le))",
+          "format": "time_series",
+          "instant": false
+        }
+      ],
+      "title": "Job Latency (P95 / P50 seconds)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 14},
+      "id": 6,
+      "interval": null,
+      "targets": [
+        {"expr": "ragg_queue_length{queue=\"reindex\"}", "format": "time_series", "instant": false}
+      ],
+      "title": "Queue Length (reindex)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 14},
+      "id": 7,
+      "interval": null,
+      "options": {},
+      "targets": [
+        {
+          "expr": "topk(20, sum by (job) (increase(ragg_job_processed_total[1h])))",
+          "format": "table",
+          "instant": false
+        }
+      ],
+      "title": "Top Jobs (processed in last hour)",
+      "type": "table"
+    },
+    {
+      "datasource": "-- Grafana --",
+      "description": "Quick links to Bull Board and job logs",
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 4, "w": 24, "x": 0, "y": 20},
+      "id": 8,
+      "options": {"content": "**Operations**\n\n- [Open Bull Board](${bull_board_url})\n- [Open Job Queue](${bull_board_url})\n\n_Replace the Bull Board URL via the dashboard variable below if needed._", "mode": "markdown"},
+      "pluginVersion": "9.3.0",
+      "title": "Operations (links)",
+      "type": "text"
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 36,
+  "style": "dark",
+  "tags": ["rag", "metrics", "jobs"],
+  "templating": {"list": [{
+    "name": "bull_board_url",
+    "type": "textbox",
+    "label": "Bull Board URL",
+    "hide": 0,
+    "current": {"text": "http://localhost:3000/admin/queues", "value": "http://localhost:3000/admin/queues"},
+    "options": []
+  }]},
+
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Foodie Finder - RAG Jobs",
+  "uid": "foodie-rag-jobs",
+  "version": 1
+}

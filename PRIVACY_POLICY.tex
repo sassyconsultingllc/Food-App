@@ -1,0 +1,189 @@
+\documentclass[11pt,letterpaper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{times}
+\usepackage{titlesec}
+
+% Formatting
+\titleformat{\section}{\Large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}{\bfseries}{\thesubsubsection}{1em}{}
+
+\hypersetup{
+    colorlinks=true,
+    urlcolor=blue,
+    linkcolor=black,
+    citecolor=black
+}
+
+\title{\textbf{Privacy Policy}}
+\author{Foodie Finder}
+\date{Effective Date: January 28, 2026 \\ Last Updated: January 28, 2026}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+\section{Introduction}
+
+Foodie Finder is committed to protecting your privacy. This policy explains how we collect, use, and protect your information when you use our mobile application.
+
+\section{Information We Collect}
+
+\subsection{Information You Provide}
+\begin{itemize}
+    \item \textbf{Default Preferences:} ZIP code and search radius for restaurant recommendations
+    \item \textbf{Favorites:} Restaurants you mark as favorites
+    \item \textbf{Personal Notes:} Optional notes you add to restaurants
+\end{itemize}
+
+\subsection{Information Collected Automatically}
+\begin{itemize}
+    \item \textbf{App Usage:} Recently viewed restaurants for quick access
+    \item \textbf{Device Information:} App version and device type for compatibility
+\end{itemize}
+
+\subsection{Information NOT Collected}
+\begin{itemize}
+    \item We do not collect personal identifiers like name, email, or phone
+    \item We do not track your location continuously
+    \item We do not collect search history or browsing behavior
+\end{itemize}
+
+\section{How We Use Your Information}
+
+We use your information to:
+\begin{itemize}
+    \item Provide personalized restaurant recommendations
+    \item Save your preferences and favorites
+    \item Improve app performance and user experience
+    \item Display recently viewed restaurants for convenience
+\end{itemize}
+
+\section{Data Storage}
+
+\subsection{Local Storage}
+All user preferences, favorites, and recently viewed history are stored \textbf{locally on your device} using secure storage mechanisms. This data is:
+\begin{itemize}
+    \item Stored only on your device
+    \item Not transmitted to our servers
+    \item Deleted when you uninstall the App or clear App data
+\end{itemize}
+
+\subsection{Cloudflare Database Cache}
+Restaurant data from Google Places API is cached in \textbf{Cloudflare D1} database to:
+\begin{itemize}
+    \item Improve app performance and loading times
+    \item Optimize Google API costs (we pay for this data)
+    \item Reduce redundant API calls to Google services
+    \item Provide consistent restaurant information across all users
+\end{itemize}
+
+\textbf{Important:} Only restaurant data from our paid Google Places API is stored in Cloudflare. No personal user data, preferences, search history, or location tracking is stored in the cloud.
+
+\subsection{Data Retention}
+\begin{itemize}
+    \item Restaurant cache data: Automatically refreshed every 30 days
+    \item Local user data: Remains on your device until you delete it
+    \item You can clear all local data through Settings > Data Management > Clear History
+\end{itemize}
+
+\section{Data Sharing}
+
+We do not sell, trade, or rent your personal information to third parties. We may share information only in the following circumstances:
+\begin{itemize}
+    \item \textbf{Legal Requirements:} If required by law, court order, or governmental authority
+    \item \textbf{Protection of Rights:} To protect our rights, privacy, safety, or property
+    \item \textbf{Business Transfers:} In connection with a merger, acquisition, or sale of assets (you will be notified)
+\end{itemize}
+
+\section{Third-Party Services}
+
+The App may display information from third-party sources including:
+\begin{itemize}
+    \item Restaurant data from Google Places API (paid service)
+    \item Culver's Flavor of the Day information (via official API)
+\end{itemize}
+
+These services have their own privacy policies, and we encourage you to review them.
+
+\section{Cloudflare Infrastructure \& Google API}
+We use Cloudflare's global infrastructure to:
+\begin{itemize}
+    \item Cache Google Places API data for faster access
+    \item Optimize costs for our paid Google API usage
+    \item Provide reliable service worldwide
+    \item Reduce environmental impact through efficient edge computing
+\end{itemize}
+
+\textbf{Google Places API:} We pay Google for restaurant data access and cache responses to provide the best user experience while managing API costs.
+
+Cloudflare processes data according to their privacy policy: \url{https://www.cloudflare.com/privacypolicy/}
+
+\section{Your Rights and Choices}
+
+\subsection{Location Access}
+\begin{itemize}
+    \item The app requests location access only when you use GPS features
+    \item You can deny location access and manually enter ZIP codes
+    \item Location data is not stored or transmitted to our servers
+\end{itemize}
+
+\subsection{Data Deletion}
+\begin{itemize}
+    \item Clear your history: Settings > Data Management > Clear History
+    \item Remove favorites: Long-press any restaurant in your favorites list
+    \item Delete all data: Uninstall the app or clear app data in device settings
+\end{itemize}
+
+\subsection{Opt-Out}
+\begin{itemize}
+    \item Disable location access in device settings
+    \item Use manual ZIP code entry instead of GPS
+    \item Clear local data regularly through app settings
+\end{itemize}
+
+\section{Children's Privacy}
+
+Our app is not directed to children under 13. We do not knowingly collect personal information from children under 13.
+
+\section{Security}
+
+We implement appropriate security measures to protect your information:
+\begin{itemize}
+    \item Local data is encrypted using device security features
+    \item Cloudflare provides enterprise-grade security for cached restaurant data
+    \item Regular security updates and monitoring
+\end{itemize}
+
+\section{Changes to This Privacy Policy}
+
+We may update this privacy policy from time to time. We will notify you of any changes by:
+\begin{itemize}
+    \item Posting the new policy in the app
+    \item Updating the effective date above
+    \item Sending in-app notifications for significant changes
+\end{itemize}
+
+\section{Contact Us}
+
+If you have questions about this privacy policy, please contact us:
+
+\textbf{Email:} info@sassyconsultingllc.com \\
+\textbf{Website:} \url{https://privacy.sassyconsultingllc.com/foodie-finder}
+
+\section{California Residents}
+
+If you are a California resident, you have additional rights under the California Consumer Privacy Act (CCPA). However, since we do not collect personal information as defined by CCPA, these rights do not apply to our app usage.
+
+\section{International Users}
+
+Your data may be processed and stored on servers located outside your country. We take appropriate measures to ensure your data is protected according to this privacy policy regardless of where it is processed.
+
+\vfill
+\begin{center}
+\copyright~2025 Sassy Consulting - A Veteran Owned Company
+\end{center}
+
+\end{document}

@@ -1,0 +1,43 @@
+version: '3.8'
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: foodie_finder_redis
+    ports:
+      - '6379:6379'
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - redis-data:/data
+
+  pushgateway:
+    image: prom/pushgateway:v1.5.0
+    container_name: foodie_finder_pushgateway
+    ports:
+      - '9091:9091'
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  chroma:
+    image: ghcr.io/chroma-core/chroma:latest
+    container_name: foodie_finder_chroma
+    ports:
+      - '8000:8000'
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  redis-data:
+    name: foodie_finder_redis_data

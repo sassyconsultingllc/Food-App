@@ -1,0 +1,8 @@
+{
+  "name": "node-domexception",
+  "version": "3.0.0-shim",
+  "description": "Local shim for node-domexception to avoid deprecated transitive dependency",
+  "main": "index.js",
+  "type": "commonjs",
+  "license": "MIT"
+}

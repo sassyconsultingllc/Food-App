@@ -1,0 +1,62 @@
+# EAS Build upload exclusions
+.git/
+node_modules/
+dist/
+.wrangler/
+.expo/
+monitoring/
+tools/
+
+# Secrets — these belong in the EAS secrets manager, never in build uploads.
+keys/
+*.pem
+*.p8
+*.p12
+*.jks
+*.keystore
+.env
+.env.local
+
+# Scrape vendored third-party code that the mobile build doesn't use.
+vendor/
+
+# Android build artifacts — these are REGENERATED fresh in the EAS
+# container. Uploading the local Windows cache CONFUSES EAS's Linux
+# Gradle: stale intermediate metadata makes autolinking fail because
+# RN module sub-projects look like they exist but don't have the
+# variants the Linux AGP expects. Keep the source files (build.gradle,
+# settings.gradle, app/src, etc.) but drop anything generated.
+android/build/
+android/.gradle/
+android/app/build/
+android/app/.cxx/
+android/.kotlin/
+
+# iOS build artifacts
+ios/build/
+ios/Pods/
+ios/DerivedData/
+
+# Packaged app artifacts
+*.aab
+*.apk
+*.ipa
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+
+# Claude Code
+.claude/
+
+# Test + coverage output
+coverage/
+.nyc_output/
+__tests__/
+
+# Scratch files we don't want in the build upload
+scripts/test-*.ts
+Notepad.txt
+*.tex
+*.pdf
