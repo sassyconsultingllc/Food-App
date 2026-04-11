@@ -38,6 +38,35 @@ const t = initTRPC.context<Context>().create({
 export const publicProcedure = t.procedure;
 export const router = t.router;
 
+/**
+ * Constant-time string compare to avoid timing-side-channel leakage of
+ * the debug token one byte at a time.
+ */
+function constantTimeEqualLocal(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+/**
+ * Assert that the current request carries a valid DEBUG_TOKEN bearer.
+ * Used to gate any mutation or query that's expensive, admin-only, or
+ * drains paid upstream budget. When the token is unset on the worker,
+ * these procedures are effectively disabled (404-ish — NOT_FOUND).
+ */
+function requireAdminAuth(ctx: Context): void {
+  const debugToken = (ctx.env as any).DEBUG_TOKEN as string | undefined;
+  if (!debugToken) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Not found" });
+  }
+  const auth = ctx.req?.headers.get("authorization") || "";
+  const expected = `Bearer ${debugToken}`;
+  if (!constantTimeEqualLocal(auth, expected)) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Admin token required" });
+  }
+}
+
 // International postal code validation (2-10 chars, alphanumeric with optional space/dash)
 const postalCodeSchema = z.string()
   .min(2, "Postal code too short")
@@ -68,12 +97,26 @@ export const appRouter = router({
         forceRefresh: z.boolean().optional().default(false),
       }))
       .query(async ({ input, ctx }) => {
-        const { postalCode, countryCode, radius, radiusUnit, cuisineType, limit, forceRefresh } = input;
+        const { postalCode, countryCode, radius, radiusUnit, cuisineType, limit } = input;
         const env = ctx.env;
         const db = env.DB;
-        
+
+        // forceRefresh is an expensive operation that drains paid Google
+        // Places quota — gate it behind a DEBUG_TOKEN bearer so random
+        // clients can't force cache misses. When the token is unset, the
+        // knob is effectively disabled (same as /api/debug/*).
+        let forceRefresh = false;
+        if (input.forceRefresh) {
+          try {
+            requireAdminAuth(ctx);
+            forceRefresh = true;
+          } catch {
+            console.warn("[Router] forceRefresh denied — missing/invalid bearer");
+          }
+        }
+
         const cacheKey = countryCode ? `${postalCode}:${countryCode}` : postalCode;
-        
+
         if (db) {
           try {
             await initCacheTables(db);
@@ -81,7 +124,7 @@ export const appRouter = router({
             console.warn("[Router] Cache init failed:", e);
           }
         }
-        
+
         if (db && !forceRefresh) {
           const isCached = await isPostalCodeCached(db, cacheKey);
           
@@ -406,8 +449,11 @@ export const appRouter = router({
         limit: z.number().min(1).max(500).default(100),
       }))
       .mutation(async ({ input, ctx }) => {
+        // Admin-only — full table reindex is expensive and drains Workers AI budget.
+        requireAdminAuth(ctx);
+
         const { VECTORIZE, AI, DB } = ctx.env;
-        
+
         if (!VECTORIZE || !AI || !DB) {
           return { success: false, error: "Vector indexing not available" };
         }
@@ -485,6 +531,9 @@ export const appRouter = router({
      */
     cacheStats: publicProcedure
       .query(async ({ ctx }) => {
+        // Admin-only — exposes table counts + timestamps that fingerprint
+        // the deployment and help time-based cache-eviction probes.
+        requireAdminAuth(ctx);
         const db = ctx.env.DB;
         if (!db) {
           return { postalCodesCount: 0, restaurantsCount: 0, oldestCache: null, newestCache: null };
@@ -503,13 +552,17 @@ export const appRouter = router({
         radiusUnit: z.enum(['miles', 'km']).default('miles'),
       }))
       .mutation(async ({ input, ctx }) => {
+        // Admin-only — directly invokes the scraper, which costs paid
+        // Google Places / Foursquare / HERE API credits per call.
+        requireAdminAuth(ctx);
+
         const env = ctx.env;
         const db = env.DB;
-        
-        const cacheKey = input.countryCode 
-          ? `${input.postalCode}:${input.countryCode}` 
+
+        const cacheKey = input.countryCode
+          ? `${input.postalCode}:${input.countryCode}`
           : input.postalCode;
-        
+
         const restaurants = await scrapeRestaurants({
           postalCode: input.postalCode,
           countryCode: input.countryCode,
@@ -626,6 +679,10 @@ export const appRouter = router({
      */
     systemStatus: publicProcedure
       .query(async ({ ctx }) => {
+        // Admin-only — leaks which bindings exist, helping an attacker
+        // enumerate infrastructure surface. Public /api/health still
+        // returns an opaque ok.
+        requireAdminAuth(ctx);
         const { DB, VECTORIZE, AI, MENU_PHOTOS } = ctx.env;
         return {
           ok: true,

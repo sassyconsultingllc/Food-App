@@ -79,6 +79,25 @@ interface ScrapeOptions {
 const geocodeCache = new Map<string, GeoCoords>();
 
 /**
+ * Fetch with a hard timeout so a hung upstream (Nominatim, Google, HERE,
+ * Foursquare, OSM Overpass) never leaves the scraper promise dangling —
+ * Workers have a 30s CPU budget and we'd rather fail fast and fall back
+ * to another source than time the whole search out. S28.
+ */
+const DEFAULT_FETCH_TIMEOUT_MS = 8000;
+async function fetchWithTimeout(
+  input: string | URL,
+  init: RequestInit = {},
+  timeoutMs: number = DEFAULT_FETCH_TIMEOUT_MS
+): Promise<Response> {
+  const signal =
+    typeof AbortSignal !== "undefined" && (AbortSignal as any).timeout
+      ? (AbortSignal as any).timeout(timeoutMs)
+      : undefined;
+  return fetch(input as any, { ...init, signal });
+}
+
+/**
  * Geocode a postal code to coordinates - INTERNATIONAL
  * Uses Nominatim (OpenStreetMap) - no country restriction
  */
@@ -103,7 +122,7 @@ export async function getCoords(postalCode: string, countryCode?: string): Promi
       u.searchParams.set('addressdetails', '1');
       if (cc) u.searchParams.set('countrycodes', cc.toLowerCase());
 
-      const r = await fetch(u.toString(), {
+      const r = await fetchWithTimeout(u.toString(), {
         headers: { 'User-Agent': 'FoodieFinder/2.0 (International)' },
       });
       if (!r.ok) return [] as any[];
@@ -172,7 +191,7 @@ async function fetchFoursquare(
     url.searchParams.set('limit', String(limit));
     url.searchParams.set('fields', 'fsq_id,name,location,categories,rating,stats,price,hours,tel,website,photos');
 
-    const res = await fetch(url.toString(), {
+    const res = await fetchWithTimeout(url.toString(), {
       headers: { Authorization: apiKey, Accept: 'application/json' },
     });
 
@@ -226,7 +245,7 @@ async function fetchHERE(
     url.searchParams.set('limit', String(limit));
     url.searchParams.set('apiKey', apiKey);
 
-    const res = await fetch(url.toString());
+    const res = await fetchWithTimeout(url.toString());
     if (!res.ok) {
       console.error(`[Scraper] HERE error: ${res.status}`);
       return [];
@@ -268,8 +287,8 @@ async function fetchGooglePlaceDetails(
 ): Promise<{ photos: string[]; website?: string; phone?: string; menuUrl?: string } | null> {
   try {
     const fields = 'photos,website,formatted_phone_number,url';
-    const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=${fields}&key=${apiKey}`;
-    const res = await fetch(url);
+    const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=${fields}&key=${apiKey}`;
+    const res = await fetchWithTimeout(url);
     if (!res.ok) return null;
     const data = await res.json() as any;
     const d = data.result;
@@ -296,7 +315,7 @@ async function fetchGoogle(
 
   try {
     const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${coords.lat},${coords.lng}&radius=${Math.min(radiusMeters, 50000)}&type=restaurant&key=${apiKey}`;
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url);
     if (!res.ok) {
       console.error(`[Scraper] Google error: ${res.status}`);
       return [];
@@ -657,7 +676,7 @@ export async function fetchCulversFlavor(postalCode: string): Promise<{
     // Fetch up to 5 so we can populate nearbyLocations
     const url = `https://www.culvers.com/api/locator/getLocations?lat=${coords.lat}&long=${coords.lng}&radius=25&limit=5`;
 
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       headers: { 'User-Agent': 'FoodieFinder/2.0' },
     });
 
