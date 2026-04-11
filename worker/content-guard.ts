@@ -10,9 +10,16 @@
 import type { KVNamespace } from "@cloudflare/workers-types";
 
 // Keep this list in sync with utils/pii-guard.ts BLOCKED_PATTERNS.
+//
+// NOTE: these patterns run against the OUTPUT of normalizeForModeration(),
+// which strips zero-width chars, folds confusables, removes diacritics, and
+// ALSO produces a "collapsed" variant with whitespace/punctuation removed.
+// That means patterns here only need to match the literal letter run — the
+// normalizer handles "f u c k", "f.u.c.k", "fvck", and "ph" substitution.
 const BLOCKED_PATTERNS: RegExp[] = [
-  // Profanity with leet-speak variants
-  /\bf+[u\*@]+c+k/i,
+  // Profanity — widened to catch fuk/fck/fvck/phuck family. Normalizer
+  // already folded "ph" → "f" and "v" → "u" in the collapsed variant.
+  /\bf+[uv\*@0]*c*k+/i,
   /\bs+h+[i1!]+t/i,
   /\ba+s+s+h+o+l+e/i,
   /\bb+[i1!]+t+c+h/i,
@@ -31,11 +38,14 @@ const BLOCKED_PATTERNS: RegExp[] = [
   /\bf+a+g+(?:g+o+t+)?/i,
   /\bt+r+a+n+n+y/i,
 
-  // Violence / threats
-  /\b(?:kill|shoot|stab|murder|bomb)\s+(?:them|him|her|you|the)/i,
-  /\b(?:i'?ll|gonna|going\s+to)\s+(?:kill|shoot|stab|hurt|beat)/i,
+  // Violence / threats — tightened to require an explicit target object so
+  // idioms like "gonna kill this burrito" / "gonna beat the heat" / "going
+  // to kill it tonight" don't false-positive. The target must be a person
+  // pronoun or a clear third-party noun.
+  /\b(?:kill|shoot|stab|murder|bomb)\s+(?:them|him|her|you|the\s+(?:staff|manager|owner|cook|chef|waiter|waitress|server|host(?:ess)?|cashier|bartender|employee|customer|guy|girl|woman|man|people))/i,
+  /\b(?:i'?ll|gonna|going\s+to)\s+(?:kill|shoot|stab|hurt|beat)\s+(?:them|him|her|you|someone|everybody|everyone|people|the\s+(?:staff|manager|owner|cook|chef|waiter|waitress|server|host(?:ess)?|cashier|bartender|employee|customer))/i,
   /\bbring\s+(?:a\s+)?gun/i,
-  /\bshoot\s*(?:up|this|the)/i,
+  /\bshoot\s*(?:up)\s+(?:this|the)\b/i,
 
   // Drug promotion
   /\b(?:sell(?:ing)?|buy(?:ing)?|smok(?:e|ing))\s+(?:meth|crack|heroin|coke|cocaine|fentanyl|pills)\b/i,
@@ -44,7 +54,7 @@ const BLOCKED_PATTERNS: RegExp[] = [
   // "fire sauce", "fire grilled", "food sucks", etc. Only matches when the
   // target is clearly a specific role.
   /\bfire\s+(?:the\s+|that\s+)?(?:staff|manager|owner|cook|chef|waiter|waitress|server|host(?:ess)?|cashier|bartender|employee)\b/i,
-  /\b(?:the\s+)?(?:manager|owner|cook|chef|waiter|waitress|server|host(?:ess)?|cashier|bartender)\s+(?:is\s+)?(?:an?\s+)?(?:idiot|moron|stupid|worthless|trash|garbage)\b/i,
+  /\b(?:the\s+)?(?:manager|owner|cook|chef|waiter|waitress|server|host(?:ess)?|cashier|bartender)\s+(?:is\s+|iz\s+)?(?:an?\s+)?(?:idiot|moron|stupid|worthless|trash|garbage)\b/i,
 ];
 
 // PII — worker logs the hit but does NOT block. We still save the note but
@@ -92,20 +102,51 @@ export interface GuardResult {
  *  - Diacritic marks are stripped (ü → u).
  */
 function normalizeForModeration(raw: string): string {
-  const CYRILLIC_TO_LATIN: Record<string, string> = {
+  const CONFUSABLES_TO_LATIN: Record<string, string> = {
+    // Cyrillic lowercase
     "а": "a", "в": "b", "с": "c", "е": "e", "һ": "h", "і": "i", "ј": "j",
     "к": "k", "м": "m", "о": "o", "р": "p", "ѕ": "s", "т": "t", "у": "y",
-    "х": "x", "А": "A", "В": "B", "С": "C", "Е": "E", "Н": "H", "І": "I",
+    "х": "x",
+    // Cyrillic uppercase
+    "А": "A", "В": "B", "С": "C", "Е": "E", "Н": "H", "І": "I",
     "Ј": "J", "К": "K", "М": "M", "О": "O", "Р": "P", "Ѕ": "S", "Т": "T",
-    "У": "Y", "Х": "X", "υ": "u", "ι": "i", "ο": "o", "α": "a",
+    "У": "Y", "Х": "X",
+    // Greek lookalikes
+    "υ": "u", "ι": "i", "ο": "o", "α": "a", "ϲ": "c", "ρ": "p", "τ": "t",
+    "ν": "v", "γ": "y", "η": "n",
+    // Turkish dotless i — the #1 bypass for [i1!] patterns
+    "ı": "i", "İ": "I",
+    // Armenian lookalikes
+    "ա": "a", "ո": "o", "ս": "s",
+    // Cherokee lookalikes (visually identical to Latin uppercase)
+    "Ꭺ": "A", "Ꭼ": "E", "Ꭻ": "J", "Ꮃ": "W", "Ꮯ": "C", "Ꮖ": "P",
+    // Other Latin-esque
+    "ƨ": "s", "ʂ": "s", "ꜱ": "s", "ʃ": "s",
   };
-  const ZW_RE = /[\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g;
+  // Zero-width and invisible characters that real bypass tools inject
+  // between letters. Expanded from the old list to include soft hyphen
+  // (U+00AD — most common spam evasion), Mongolian vowel separator,
+  // line/paragraph separators, and Hangul fillers.
+  const ZW_RE =
+    /[\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180E\u200B-\u200F\u202A-\u202E\u2028\u2029\u205F\u2060-\u2064\u206A-\u206F\u3164\uFEFF\uFFA0]/g;
+
   let s = (raw || "").normalize("NFKC").replace(ZW_RE, "");
-  // Fold common Cyrillic/Greek confusables to Latin
-  s = Array.from(s).map((ch) => CYRILLIC_TO_LATIN[ch] ?? ch).join("");
+  // Fold Cyrillic / Greek / Armenian / dotless-i / Cherokee confusables
+  s = Array.from(s).map((ch) => CONFUSABLES_TO_LATIN[ch] ?? ch).join("");
   // Strip combining diacritics (NFD + remove \p{M})
   s = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").normalize("NFC");
   return s;
+}
+
+/**
+ * Produce a "collapsed" variant of the normalized text with whitespace and
+ * common punctuation removed so "f u c k" / "f.u.c.k" / "f_u_c_k" all become
+ * "fuck" before pattern matching. Blocked patterns are run against BOTH
+ * variants so legitimate phrases that happen to contain the letter run are
+ * still caught, but word-boundary heuristics still work on the normal form.
+ */
+function collapseForModeration(normalized: string): string {
+  return normalized.replace(/[\s._\-*·•]+/g, "");
 }
 
 /**
@@ -127,11 +168,14 @@ export function guardPublicNote(raw: string): GuardResult {
   // Normalize for moderation (not for persistence — we still store the
   // user's original Unicode so legitimate names / emoji survive).
   const normalized = normalizeForModeration(text);
+  // "Collapsed" variant with whitespace/punctuation removed defeats the
+  // "f u c k" / "f.u.c.k" interstitial-char bypass class.
+  const collapsed = collapseForModeration(normalized);
 
-  // Content moderation — hard block. Run against normalized text so
-  // homoglyph bypass attempts fail.
+  // Content moderation — hard block. Run against BOTH the normalized and
+  // collapsed variants so homoglyph and interstitial bypasses fail.
   for (const pattern of BLOCKED_PATTERNS) {
-    if (pattern.test(normalized)) {
+    if (pattern.test(normalized) || pattern.test(collapsed)) {
       return {
         blocked: true,
         reason:
@@ -178,7 +222,16 @@ export async function checkNoteRateLimit(
   const key = `note_rl:${identifier}`;
 
   const raw = await kv.get(key);
-  let stamps: number[] = raw ? JSON.parse(raw) : [];
+  let stamps: number[] = [];
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) stamps = parsed.filter((n) => typeof n === "number");
+    } catch {
+      // Corrupted/legacy entry — reset rather than 500 the caller.
+      stamps = [];
+    }
+  }
 
   // Drop stamps older than the window
   stamps = stamps.filter((ts) => now - ts < windowMs);

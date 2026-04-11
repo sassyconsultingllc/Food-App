@@ -91,16 +91,21 @@ export function checkForPII(text: string): PIICheckResult {
  *  - Drug references (in context of promoting use)
  *  - Targeting individuals by name ("fire [name]", "[name] sucks")
  */
+// MUST stay in sync with worker/content-guard.ts BLOCKED_PATTERNS. The
+// server guard is authoritative, but UX depends on the client warning
+// the same set so users don't submit a note that's going to be rejected.
+// Run against BOTH normalizeForModeration(raw) and its collapsed variant
+// so homoglyphs and interstitial chars (f u c k, f.u.c.k) are caught.
 const BLOCKED_PATTERNS: RegExp[] = [
-  // --- Profanity (common variants with leet-speak) ---
-  /\bf+[u\*@]+c+k/i,
+  // --- Profanity — widened to cover phuck/fvck/fuk family ---
+  /\bf+[uv\*@0]*c*k+/i,
   /\bs+h+[i1!]+t/i,
   /\ba+s+s+h+o+l+e/i,
   /\bb+[i1!]+t+c+h/i,
   /\bd+[i1!]+c+k/i,
   /\bc+u+n+t/i,
   /\bw+h+o+r+e/i,
-  /\bd+a+m+n/i,
+  // "damn" was client-only — dropped so client+server decisions match.
 
   // --- Racial / ethnic slurs (partial patterns to catch variants) ---
   /\bn+[i1!]+g+g/i,
@@ -113,21 +118,47 @@ const BLOCKED_PATTERNS: RegExp[] = [
   /\bf+a+g+(?:g+o+t+)?/i,
   /\bt+r+a+n+n+y/i,
 
-  // --- Violence / threats ---
-  /\b(?:kill|shoot|stab|murder|bomb)\s+(?:them|him|her|you|the)/i,
-  /\b(?:i'?ll|gonna|going\s+to)\s+(?:kill|shoot|stab|hurt|beat)/i,
+  // --- Violence / threats — require an explicit target so idioms like
+  // "gonna kill this burrito" / "going to beat the heat" don't trigger. ---
+  /\b(?:kill|shoot|stab|murder|bomb)\s+(?:them|him|her|you|the\s+(?:staff|manager|owner|cook|chef|waiter|waitress|server|host(?:ess)?|cashier|bartender|employee|customer|guy|girl|woman|man|people))/i,
+  /\b(?:i'?ll|gonna|going\s+to)\s+(?:kill|shoot|stab|hurt|beat)\s+(?:them|him|her|you|someone|everybody|everyone|people|the\s+(?:staff|manager|owner|cook|chef|waiter|waitress|server|host(?:ess)?|cashier|bartender|employee|customer))/i,
   /\bbring\s+(?:a\s+)?gun/i,
-  /\bshoot\s*(?:up|this|the)/i,
+  /\bshoot\s*(?:up)\s+(?:this|the)\b/i,
 
   // --- Drug promotion ---
   /\b(?:sell(?:ing)?|buy(?:ing)?|smok(?:e|ing))\s+(?:meth|crack|heroin|coke|cocaine|fentanyl|pills)\b/i,
 
   // --- Targeted harassment of staff ---
-  // Narrowly scoped so "fire sauce", "fire grilled", "food sucks", etc.
-  // pass through — the server-side guard uses identical patterns.
   /\bfire\s+(?:the\s+|that\s+)?(?:staff|manager|owner|cook|chef|waiter|waitress|server|host(?:ess)?|cashier|bartender|employee)\b/i,
-  /\b(?:the\s+)?(?:manager|owner|cook|chef|waiter|waitress|server|host(?:ess)?|cashier|bartender)\s+(?:is\s+)?(?:an?\s+)?(?:idiot|moron|stupid|worthless|trash|garbage)\b/i,
+  /\b(?:the\s+)?(?:manager|owner|cook|chef|waiter|waitress|server|host(?:ess)?|cashier|bartender)\s+(?:is\s+|iz\s+)?(?:an?\s+)?(?:idiot|moron|stupid|worthless|trash|garbage)\b/i,
 ];
+
+// Mirror worker/content-guard.ts normalizeForModeration + collapse. Kept
+// in a tiny inline form so this file stays dependency-free.
+const CONFUSABLES_TO_LATIN: Record<string, string> = {
+  "а": "a", "в": "b", "с": "c", "е": "e", "һ": "h", "і": "i", "ј": "j",
+  "к": "k", "м": "m", "о": "o", "р": "p", "ѕ": "s", "т": "t", "у": "y",
+  "х": "x", "А": "A", "В": "B", "С": "C", "Е": "E", "Н": "H", "І": "I",
+  "Ј": "J", "К": "K", "М": "M", "О": "O", "Р": "P", "Ѕ": "S", "Т": "T",
+  "У": "Y", "Х": "X", "υ": "u", "ι": "i", "ο": "o", "α": "a", "ϲ": "c",
+  "ρ": "p", "τ": "t", "ν": "v", "γ": "y", "η": "n",
+  "ı": "i", "İ": "I",
+  "ա": "a", "ո": "o", "ս": "s",
+  "Ꭺ": "A", "Ꭼ": "E", "Ꭻ": "J", "Ꮃ": "W", "Ꮯ": "C", "Ꮖ": "P",
+  "ƨ": "s", "ʂ": "s", "ꜱ": "s", "ʃ": "s",
+};
+const ZW_RE_LOCAL =
+  /[\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180E\u200B-\u200F\u202A-\u202E\u2028\u2029\u205F\u2060-\u2064\u206A-\u206F\u3164\uFEFF\uFFA0]/g;
+
+function normalizeForModerationLocal(raw: string): string {
+  let s = (raw || "").normalize("NFKC").replace(ZW_RE_LOCAL, "");
+  s = Array.from(s).map((ch) => CONFUSABLES_TO_LATIN[ch] ?? ch).join("");
+  s = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").normalize("NFC");
+  return s;
+}
+function collapseForModerationLocal(n: string): string {
+  return n.replace(/[\s._\-*·•]+/g, "");
+}
 
 export interface ModerationResult {
   blocked: boolean;
@@ -143,8 +174,10 @@ export function moderateContent(text: string): ModerationResult {
     return { blocked: false, reason: "" };
   }
 
+  const normalized = normalizeForModerationLocal(text);
+  const collapsed = collapseForModerationLocal(normalized);
   for (const pattern of BLOCKED_PATTERNS) {
-    if (pattern.test(text)) {
+    if (pattern.test(normalized) || pattern.test(collapsed)) {
       return {
         blocked: true,
         reason:

@@ -63,7 +63,7 @@ const localPublicNotes = new Map<string, PublicNote[]>();
  * gets scrubbed before persistence.
  */
 const BLOCKED_PATTERNS: RegExp[] = [
-  /\bf+[u\*@]+c+k/i,
+  /\bf+[uv\*@0]*c*k+/i,
   /\bs+h+[i1!]+t/i,
   /\ba+s+s+h+o+l+e/i,
   /\bb+[i1!]+t+c+h/i,
@@ -79,14 +79,14 @@ const BLOCKED_PATTERNS: RegExp[] = [
   /\br+e+t+a+r+d/i,
   /\bf+a+g+(?:g+o+t+)?/i,
   /\bt+r+a+n+n+y/i,
-  /\b(?:kill|shoot|stab|murder|bomb)\s+(?:them|him|her|you|the)/i,
-  /\b(?:i'?ll|gonna|going\s+to)\s+(?:kill|shoot|stab|hurt|beat)/i,
+  /\b(?:kill|shoot|stab|murder|bomb)\s+(?:them|him|her|you|the\s+(?:staff|manager|owner|cook|chef|waiter|waitress|server|host(?:ess)?|cashier|bartender|employee|customer|guy|girl|woman|man|people))/i,
+  /\b(?:i'?ll|gonna|going\s+to)\s+(?:kill|shoot|stab|hurt|beat)\s+(?:them|him|her|you|someone|everybody|everyone|people|the\s+(?:staff|manager|owner|cook|chef|waiter|waitress|server|host(?:ess)?|cashier|bartender|employee|customer))/i,
   /\bbring\s+(?:a\s+)?gun/i,
-  /\bshoot\s*(?:up|this|the)/i,
+  /\bshoot\s*(?:up)\s+(?:this|the)\b/i,
   /\b(?:sell(?:ing)?|buy(?:ing)?|smok(?:e|ing))\s+(?:meth|crack|heroin|coke|cocaine|fentanyl|pills)\b/i,
   // Narrowly-scoped staff harassment (don't catch "fire sauce", "food sucks")
   /\bfire\s+(?:the\s+|that\s+)?(?:staff|manager|owner|cook|chef|waiter|waitress|server|host(?:ess)?|cashier|bartender|employee)\b/i,
-  /\b(?:the\s+)?(?:manager|owner|cook|chef|waiter|waitress|server|host(?:ess)?|cashier|bartender)\s+(?:is\s+)?(?:an?\s+)?(?:idiot|moron|stupid|worthless|trash|garbage)\b/i,
+  /\b(?:the\s+)?(?:manager|owner|cook|chef|waiter|waitress|server|host(?:ess)?|cashier|bartender)\s+(?:is\s+|iz\s+)?(?:an?\s+)?(?:idiot|moron|stupid|worthless|trash|garbage)\b/i,
 ];
 
 // Per-call factory for PII regexes — never share module-level /g regexes
@@ -102,10 +102,27 @@ function makeLocalPiiPatterns(): { label: string; regex: RegExp }[] {
 }
 
 function normalizeForModerationLocal(raw: string): string {
-  const ZW_RE = /[\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g;
+  const CONFUSABLES: Record<string, string> = {
+    "а": "a", "в": "b", "с": "c", "е": "e", "һ": "h", "і": "i", "ј": "j",
+    "к": "k", "м": "m", "о": "o", "р": "p", "ѕ": "s", "т": "t", "у": "y",
+    "х": "x", "А": "A", "В": "B", "С": "C", "Е": "E", "Н": "H", "І": "I",
+    "Ј": "J", "К": "K", "М": "M", "О": "O", "Р": "P", "Ѕ": "S", "Т": "T",
+    "У": "Y", "Х": "X", "υ": "u", "ι": "i", "ο": "o", "α": "a", "ϲ": "c",
+    "ρ": "p", "τ": "t", "ν": "v", "γ": "y", "η": "n",
+    "ı": "i", "İ": "I",
+    "ա": "a", "ո": "o", "ս": "s",
+    "Ꭺ": "A", "Ꭼ": "E", "Ꭻ": "J", "Ꮃ": "W", "Ꮯ": "C", "Ꮖ": "P",
+    "ƨ": "s", "ʂ": "s", "ꜱ": "s", "ʃ": "s",
+  };
+  const ZW_RE =
+    /[\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180E\u200B-\u200F\u202A-\u202E\u2028\u2029\u205F\u2060-\u2064\u206A-\u206F\u3164\uFEFF\uFFA0]/g;
   let s = (raw || "").normalize("NFKC").replace(ZW_RE, "");
+  s = Array.from(s).map((ch) => CONFUSABLES[ch] ?? ch).join("");
   s = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").normalize("NFC");
   return s;
+}
+function collapseForModerationLocal(n: string): string {
+  return n.replace(/[\s._\-*·•]+/g, "");
 }
 
 function guardPublicNoteLocal(raw: string): {
@@ -122,8 +139,9 @@ function guardPublicNoteLocal(raw: string): {
     return { blocked: true, reason: "Note is too long (max 500 characters).", cleaned: "", scrubbed: [] };
   }
   const normalized = normalizeForModerationLocal(text);
+  const collapsed = collapseForModerationLocal(normalized);
   for (const pattern of BLOCKED_PATTERNS) {
-    if (pattern.test(normalized)) {
+    if (pattern.test(normalized) || pattern.test(collapsed)) {
       return {
         blocked: true,
         reason: "This note contains language that isn't allowed in public comments. Please keep it respectful.",

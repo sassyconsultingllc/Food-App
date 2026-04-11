@@ -816,24 +816,66 @@ export const appRouter = router({
 
         // Extract a Google Place ID from the shared URL. We only accept
         // google.com/maps, maps.google.com, goo.gl/maps, and maps.app.goo.gl.
+        // Parse with URL() and assert the hostname EXACTLY matches one of
+        // the allowed hosts — unanchored substring tests let
+        // `http://169.254.169.254/?x=maps.google.com` through and turn this
+        // endpoint into an SSRF probe.
         const { url } = input;
-        const googleHostRe = /(maps\.google\.com|google\.com\/maps|goo\.gl\/maps|maps\.app\.goo\.gl)/i;
-        if (!googleHostRe.test(url)) {
+        const ALLOWED_GOOGLE_HOSTS = new Set([
+          "maps.google.com",
+          "www.google.com",
+          "google.com",
+          "goo.gl",
+          "maps.app.goo.gl",
+        ]);
+        let parsed: URL;
+        try {
+          parsed = new URL(url);
+        } catch {
+          return { success: false as const, error: "Invalid URL." };
+        }
+        if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+          return { success: false as const, error: "Only http(s) URLs are supported." };
+        }
+        const host = parsed.hostname.toLowerCase();
+        const isGoogleMaps =
+          ALLOWED_GOOGLE_HOSTS.has(host) &&
+          // google.com / www.google.com only counts if the path is /maps
+          (host === "maps.google.com" ||
+            host === "goo.gl" ||
+            host === "maps.app.goo.gl" ||
+            parsed.pathname.startsWith("/maps"));
+        if (!isGoogleMaps) {
           return {
             success: false as const,
             error: "Only Google Maps URLs are supported.",
           };
         }
 
-        // Follow any shortener redirect to get the canonical URL.
-        let resolvedUrl = url;
+        // Follow any shortener redirect to get the canonical URL, but
+        // re-validate the resolved host against the same allowlist — Google's
+        // own shorteners redirect to maps.google.com but a compromised or
+        // impersonated shortener might not.
+        let resolvedUrl = parsed.toString();
         try {
-          const head = await fetch(url, {
+          const head = await fetch(resolvedUrl, {
             method: "HEAD",
             redirect: "follow",
             signal: AbortSignal.timeout(5000),
           });
-          if (head.url) resolvedUrl = head.url;
+          if (head.url) {
+            const resolved = new URL(head.url);
+            const rHost = resolved.hostname.toLowerCase();
+            if (
+              ALLOWED_GOOGLE_HOSTS.has(rHost) &&
+              (rHost === "maps.google.com" ||
+                rHost === "goo.gl" ||
+                rHost === "maps.app.goo.gl" ||
+                resolved.pathname.startsWith("/maps"))
+            ) {
+              resolvedUrl = head.url;
+            }
+          }
         } catch {
           // If the redirect chase fails we still try to parse the original.
         }

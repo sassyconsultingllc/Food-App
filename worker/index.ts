@@ -281,6 +281,16 @@ app.post("/api/vision/classify", async (c) => {
     return c.json({ error: "Vision API not configured" }, 503);
   }
 
+  // Rate-limit per client IP so a single caller can't drain the Vision budget.
+  // Uses the same sliding-window limiter as /api/menu/*/upload (fails closed
+  // when the KV binding is missing).
+  const ip = getClientIP(c);
+  const rl = await checkRateLimit(env.RATE_LIMIT, `vision:${ip}`, 30, 60);
+  c.header("X-RateLimit-Remaining", String(rl.remaining));
+  if (!rl.allowed) {
+    return c.json({ error: "Vision rate limit exceeded. Try again in a minute." }, 429);
+  }
+
   let body: { urls?: unknown };
   try {
     body = (await c.req.json()) as { urls?: unknown };
@@ -291,12 +301,23 @@ app.post("/api/vision/classify", async (c) => {
   if (!Array.isArray(body.urls) || body.urls.length === 0) {
     return c.json({ error: "urls array required" }, 400);
   }
-  // Enforce a hard cap to prevent a single request from draining budget
+  // Enforce a hard cap to prevent a single request from draining budget.
+  // Also parse each URL and reject anything that isn't http(s) or that's
+  // absurdly long — the URL becomes part of a KV key (`vision:${url}`) so
+  // we don't want callers stuffing arbitrary strings into the keyspace.
   const urls = body.urls
-    .filter((u): u is string => typeof u === "string")
+    .filter((u): u is string => typeof u === "string" && u.length > 0 && u.length <= 512)
+    .filter((u) => {
+      try {
+        const parsed = new URL(u);
+        return parsed.protocol === "http:" || parsed.protocol === "https:";
+      } catch {
+        return false;
+      }
+    })
     .slice(0, 16);
   if (urls.length === 0) {
-    return c.json({ error: "urls must contain strings" }, 400);
+    return c.json({ error: "urls must contain valid http(s) URLs" }, 400);
   }
 
   const cacheKv = env.RATE_LIMIT as KVNamespace | undefined;
