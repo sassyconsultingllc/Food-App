@@ -5,9 +5,12 @@
  * Ensures required environment variables are present at startup
  */
 
-// Client-side vars must have EXPO_PUBLIC_ prefix to be bundled by Metro
+// Client-side vars must have EXPO_PUBLIC_ prefix to be bundled by Metro.
+// Only truly-public config belongs here — NEVER put a third-party API key
+// on this list. All third-party API calls now go through the worker
+// proxy (e.g. /api/vision/classify) so the real keys stay on the server.
 const requiredEnvVars = [
-  'EXPO_PUBLIC_GOOGLE_VISION_API_KEY',
+  'EXPO_PUBLIC_API_BASE_URL',
 ] as const;
 
 export function validateEnvironment() {

@@ -29,7 +29,6 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Colors, AppColors, Spacing, BorderRadius } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { getApiBaseUrl } from "@/constants/oauth";
-import * as FileSystem from "expo-file-system";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const MENU_PHOTO_WIDTH = SCREEN_WIDTH * 0.75;
@@ -89,63 +88,17 @@ export function MenuSection({
     return () => { cancelled = true; };
   }, [restaurantId]);
 
-  const visionApiKey = process.env.EXPO_PUBLIC_GOOGLE_VISION_API_KEY;
-
-  const isMenuLike = useCallback(
-    async (uri: string) => {
-      if (!visionApiKey) return true;
-      try {
-        const base64 = await FileSystem.readAsStringAsync(uri, {
-          encoding: "base64",
-        });
-
-        const body = {
-          requests: [
-            {
-              image: { content: base64 },
-              features: [{ type: "TEXT_DETECTION" }],
-            },
-          ],
-        };
-
-        const res = await fetch(
-          `https://vision.googleapis.com/v1/images:annotate?key=${visionApiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          }
-        );
-
-        if (!res.ok) return true; // don't block on API errors
-        const json = await res.json();
-        const text =
-          json?.responses?.[0]?.fullTextAnnotation?.text ||
-          json?.responses?.[0]?.textAnnotations?.[0]?.description ||
-          "";
-        const charCount = text.replace(/\s+/g, "").length;
-        // Require a modest amount of text to treat as a menu
-        return charCount >= 40;
-      } catch {
-        return true; // allow if OCR fails
-      }
-    },
-    [visionApiKey]
-  );
-
+  // Previously this component did a client-side Vision OCR call to
+  // pre-check whether the user-picked asset was a menu. That required
+  // shipping the Google Vision API key in every installed APK
+  // (EXPO_PUBLIC_GOOGLE_VISION_API_KEY), which was a B1 audit finding.
+  // The key is now server-only — Vision calls happen exclusively through
+  // /api/vision/classify in the worker. Client-side pre-check has been
+  // removed; the worker's upload endpoint can add server-side OCR
+  // validation in a future pass if false-uploads become a problem.
   const filterMenuAssets = useCallback(
-    async (uris: { uri: string }[]) => {
-      if (!uris.length) return [];
-      if (!visionApiKey) return uris;
-
-      const approved: { uri: string }[] = [];
-      for (const asset of uris) {
-        const ok = await isMenuLike(asset.uri);
-        if (ok) approved.push(asset);
-      }
-      return approved;
-    },
-    [isMenuLike, visionApiKey]
+    async (uris: { uri: string }[]) => uris,
+    []
   );
 
   // Combine all menu photo sources — user-uploaded (R2-backed) first so
@@ -241,13 +194,7 @@ export function MenuSection({
     setUploading(true);
     try {
       const validAssets = await filterMenuAssets(result.assets);
-      if (visionApiKey && !validAssets.length) {
-        Alert.alert(
-          "Not a menu",
-          "We couldn't detect menu text in these photos. Please try another shot."
-        );
-        return;
-      }
+      if (!validAssets.length) return;
 
       const uploadedUrls = await uploadAssetsToServer(validAssets);
       setApiMenuPhotos((prev) => [...uploadedUrls, ...prev]);
@@ -261,7 +208,7 @@ export function MenuSection({
     } finally {
       setUploading(false);
     }
-  }, [filterMenuAssets, visionApiKey, uploadAssetsToServer]);
+  }, [filterMenuAssets, uploadAssetsToServer]);
 
   const handleTakePhoto = useCallback(async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -279,13 +226,7 @@ export function MenuSection({
     setUploading(true);
     try {
       const valid = await filterMenuAssets(result.assets);
-      if (visionApiKey && !valid.length) {
-        Alert.alert(
-          "Not a menu",
-          "We couldn't detect menu text in this photo. Please try another shot."
-        );
-        return;
-      }
+      if (!valid.length) return;
 
       const uploadedUrls = await uploadAssetsToServer(valid);
       setApiMenuPhotos((prev) => [...uploadedUrls, ...prev]);
@@ -299,7 +240,7 @@ export function MenuSection({
     } finally {
       setUploading(false);
     }
-  }, [filterMenuAssets, visionApiKey, uploadAssetsToServer]);
+  }, [filterMenuAssets, uploadAssetsToServer]);
 
   if (!hasMenuContent) {
     return null;

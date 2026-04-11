@@ -325,7 +325,9 @@ async function fetchGoogle(
         : undefined;
       const photos = details?.photos?.length ? details.photos : (searchPhoto ? [searchPhoto] : []);
       return {
-        id: `goog_${p.place_id}`,
+        // Match server-side prefix (`google_`) so the same place has the
+        // same ID regardless of which backend served the request.
+        id: `google_${p.place_id}`,
         name: p.name,
         address: p.vicinity || '',
         city: coords.city || '',
@@ -387,58 +389,121 @@ function generateExternalUrls(
   };
 }
 
+/**
+ * Haversine distance between two lat/lng points in meters.
+ * Used to distinguish between two restaurants with the same normalized
+ * name (chains) when merging results — same name + <100m apart is
+ * almost certainly the same physical restaurant from multiple sources;
+ * same name + >100m apart is two different locations of a chain.
+ */
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000; // meters
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+const MERGE_DISTANCE_METERS = 100;
+
 function mergeRestaurants(all: Partial<ScrapedRestaurant>[]): ScrapedRestaurant[] {
-  const grouped = new Map<string, Partial<ScrapedRestaurant>[]>();
-  
+  // Group by normalized name AND geographic proximity. Two records with the
+  // same name only merge when they're within MERGE_DISTANCE_METERS of each
+  // other — otherwise they're two different locations of a chain and must
+  // stay separate. Previously we grouped by name alone, which collapsed
+  // every Starbucks/McDonald's/etc. in the search radius into a single
+  // record with the first source's coordinates.
+  const grouped: Partial<ScrapedRestaurant>[][] = [];
+
   for (const r of all) {
     const key = normalizeRestaurantName(r.name || '');
     if (!key) continue;
-    if (!grouped.has(key)) grouped.set(key, []);
-    grouped.get(key)!.push(r);
+
+    // Try to attach to an existing group with the same name AND within
+    // MERGE_DISTANCE_METERS. Otherwise start a new group.
+    let attached = false;
+    for (const group of grouped) {
+      const sameName = normalizeRestaurantName(group[0].name || '') === key;
+      if (!sameName) continue;
+
+      const g0 = group[0];
+      const hasCoords =
+        typeof g0.latitude === 'number' &&
+        typeof g0.longitude === 'number' &&
+        typeof r.latitude === 'number' &&
+        typeof r.longitude === 'number';
+
+      if (hasCoords) {
+        const d = haversineMeters(g0.latitude!, g0.longitude!, r.latitude!, r.longitude!);
+        if (d <= MERGE_DISTANCE_METERS) {
+          group.push(r);
+          attached = true;
+          break;
+        }
+      } else {
+        // No coords on at least one side — fall back to name match only.
+        group.push(r);
+        attached = true;
+        break;
+      }
+    }
+
+    if (!attached) {
+      grouped.push([r]);
+    }
   }
   
   const merged: ScrapedRestaurant[] = [];
-  
-  for (const records of grouped.values()) {
+
+  for (const records of grouped) {
     const primary = records[0];
     const allSources = [...new Set(records.flatMap(r => r.sources || []))];
     const allCategories = [...new Set(records.flatMap(r => r.categories || []))];
     const allPhotos = [...new Set(records.flatMap(r => r.photos || []))];
     
-    // Aggregate ratings
+    // Aggregate ratings — review-count weighted, matching the local dev
+    // server (server/restaurant-scraper.ts::mergeRestaurantRecords). A
+    // source with 10,000 reviews at 4.5 stars should weigh more than a
+    // source with 3 reviews at 5.0 stars. Previously this was an
+    // unweighted mean that produced different scores from dev.
     const ratings: ScrapedRestaurant['ratings'] = {
       aggregated: 0,
       totalReviews: 0,
     };
-    
-    let ratingSum = 0;
-    let ratingCount = 0;
-    
+
+    let totalWeightedRating = 0;
+    let totalReviews = 0;
+
     for (const r of records) {
       if (r.ratings?.foursquare != null) {
         ratings.foursquare = r.ratings.foursquare;
-        ratings.foursquareReviewCount = r.ratings.foursquareReviewCount;
-        ratingSum += r.ratings.foursquare;
-        ratingCount++;
-        ratings.totalReviews += r.ratings.foursquareReviewCount || 0;
+        ratings.foursquareReviewCount = r.ratings.foursquareReviewCount || 0;
+        const count = r.ratings.foursquareReviewCount || 1;
+        totalWeightedRating += r.ratings.foursquare * count;
+        totalReviews += count;
       }
       if (r.ratings?.here != null) {
         ratings.here = r.ratings.here;
-        ratings.hereReviewCount = r.ratings.hereReviewCount;
-        ratingSum += r.ratings.here;
-        ratingCount++;
-        ratings.totalReviews += r.ratings.hereReviewCount || 0;
+        ratings.hereReviewCount = r.ratings.hereReviewCount || 0;
+        const count = r.ratings.hereReviewCount || 1;
+        totalWeightedRating += r.ratings.here * count;
+        totalReviews += count;
       }
       if (r.ratings?.google != null) {
         ratings.google = r.ratings.google;
-        ratings.googleReviewCount = r.ratings.googleReviewCount;
-        ratingSum += r.ratings.google;
-        ratingCount++;
-        ratings.totalReviews += r.ratings.googleReviewCount || 0;
+        ratings.googleReviewCount = r.ratings.googleReviewCount || 0;
+        const count = r.ratings.googleReviewCount || 1;
+        totalWeightedRating += r.ratings.google * count;
+        totalReviews += count;
       }
     }
-    
-    ratings.aggregated = ratingCount > 0 ? ratingSum / ratingCount : 0;
+
+    ratings.aggregated =
+      totalReviews > 0 ? Math.round((totalWeightedRating / totalReviews) * 10) / 10 : 0;
+    ratings.totalReviews = totalReviews;
     
     // Generate sentiment from ratings
     const sentiment = inferSentimentFromMetadata(

@@ -644,11 +644,12 @@ export const appRouter = router({
     // =========================================================================
 
     /**
-     * Get public notes for a restaurant
+     * Get public notes for a restaurant. restaurantId is restricted to
+     * safe key characters to prevent KV key stuffing via user input.
      */
     getPublicNotes: publicProcedure
       .input(z.object({
-        restaurantId: z.string(),
+        restaurantId: z.string().regex(/^[\w-]{1,128}$/, "Invalid restaurant id"),
       }))
       .query(async ({ input, ctx }) => {
         const kv = ctx.env.FOODIE_PUBLIC_NOTES;
@@ -682,7 +683,7 @@ export const appRouter = router({
      */
     addPublicNote: publicProcedure
       .input(z.object({
-        restaurantId: z.string().min(1).max(128),
+        restaurantId: z.string().regex(/^[\w-]{1,128}$/, "Invalid restaurant id"),
         text: z.string().min(2, "Note too short").max(500, "Note too long"),
         displayName: z.string().max(30).optional(),
       }))
@@ -695,22 +696,26 @@ export const appRouter = router({
           });
         }
 
-        // 1. Rate limit per client IP (falls back to a shared bucket if we
-        //    can't read the header, which is still bounded).
+        // 1. Rate limit per client IP. FAIL CLOSED: if the RATE_LIMIT KV
+        //    binding is missing (misconfigured env, binding drift), reject
+        //    the request rather than handing out unlimited posts. Also
+        //    ONLY trust cf-connecting-ip — never fall back to client-
+        //    supplied x-forwarded-for.
         const rateLimitKv = ctx.env.RATE_LIMIT;
-        const ip =
-          ctx.req?.headers.get("cf-connecting-ip") ||
-          ctx.req?.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-          "anon";
-        if (rateLimitKv) {
-          const rl = await checkNoteRateLimit(rateLimitKv, ip, 10);
-          if (!rl.allowed) {
-            const minutes = Math.max(1, Math.ceil((rl.resetAt - Date.now()) / 60000));
-            throw new TRPCError({
-              code: "TOO_MANY_REQUESTS",
-              message: `You've hit the hourly tip limit. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`,
-            });
-          }
+        if (!rateLimitKv) {
+          throw new TRPCError({
+            code: "SERVICE_UNAVAILABLE",
+            message: "Rate limiter not configured.",
+          });
+        }
+        const ip = ctx.req?.headers.get("cf-connecting-ip") || "anon";
+        const rl = await checkNoteRateLimit(rateLimitKv, ip, 10);
+        if (!rl.allowed) {
+          const minutes = Math.max(1, Math.ceil((rl.resetAt - Date.now()) / 60000));
+          throw new TRPCError({
+            code: "TOO_MANY_REQUESTS",
+            message: `You've hit the hourly tip limit. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`,
+          });
         }
 
         // 2 + 3. Content moderation + PII scrubbing.
@@ -739,10 +744,21 @@ export const appRouter = router({
           ts: Date.now(),
         };
 
-        // 4 + 5. Load, dedupe, append, cap, persist.
+        // 4 + 5. Load, dedupe, append, cap, persist. JSON.parse is
+        // wrapped in try/catch so a corrupted KV entry doesn't brick
+        // the whole restaurant's note feature — if parsing fails we
+        // reset to an empty list (matching the getPublicNotes path).
         const key = `notes:${input.restaurantId}`;
         const raw = await kv.get(key);
-        const existing: PublicNote[] = raw ? JSON.parse(raw) : [];
+        let existing: PublicNote[] = [];
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) existing = parsed;
+          } catch {
+            existing = [];
+          }
+        }
 
         const mostRecent = existing[existing.length - 1];
         if (
@@ -766,36 +782,145 @@ export const appRouter = router({
       }),
 
     /**
-     * Import a restaurant from a shared link/payload
-     * Accepts shared restaurant JSON and stores it in the D1 cache
+     * Import a restaurant from a shared Google Maps URL.
+     *
+     * Matches the server/restaurant-router.ts contract:
+     *   input  = { url, userId }
+     *   output = { success, restaurant?, restaurantId?, error? }
+     *
+     * The previous worker implementation took a pre-built `{ restaurant }`
+     * object and wrote it directly into the D1 cache under a user-supplied
+     * cacheKey, which allowed unauthenticated cache poisoning of arbitrary
+     * postal codes. The fix both closes that hole AND aligns the worker to
+     * the typed contract the client depends on.
+     *
+     * In production we do not have the full Google Places share resolver
+     * stack that local dev uses (it lives in server/share-import.ts and
+     * depends on Node-only code). The worker implementation does the
+     * lookup via the Google Places API using a URL resolver and stores
+     * the result in D1 via the normal cacheRestaurants path.
      */
     importFromShare: publicProcedure
       .input(z.object({
-        restaurant: z.object({
-          id: z.string(),
-          name: z.string(),
-          cuisineType: z.string(),
-          address: z.string(),
-          city: z.string().optional(),
-          state: z.string().optional(),
-          zipCode: z.string().optional(),
-          latitude: z.number(),
-          longitude: z.number(),
-        }),
-        cacheKey: z.string().optional(),
+        url: z.string().url(),
+        userId: z.string().min(1).max(128),
       }))
       .mutation(async ({ input, ctx }) => {
         const db = ctx.env.DB;
         if (!db) {
-          throw new Error("Database not configured");
+          throw new TRPCError({
+            code: "SERVICE_UNAVAILABLE",
+            message: "Database not configured",
+          });
         }
 
-        const { restaurant, cacheKey } = input;
-        const key = cacheKey || restaurant.zipCode || "shared";
+        // Extract a Google Place ID from the shared URL. We only accept
+        // google.com/maps, maps.google.com, goo.gl/maps, and maps.app.goo.gl.
+        const { url } = input;
+        const googleHostRe = /(maps\.google\.com|google\.com\/maps|goo\.gl\/maps|maps\.app\.goo\.gl)/i;
+        if (!googleHostRe.test(url)) {
+          return {
+            success: false as const,
+            error: "Only Google Maps URLs are supported.",
+          };
+        }
 
-        await cacheRestaurants(db, key, [restaurant], ["shared"]);
+        // Follow any shortener redirect to get the canonical URL.
+        let resolvedUrl = url;
+        try {
+          const head = await fetch(url, {
+            method: "HEAD",
+            redirect: "follow",
+            signal: AbortSignal.timeout(5000),
+          });
+          if (head.url) resolvedUrl = head.url;
+        } catch {
+          // If the redirect chase fails we still try to parse the original.
+        }
 
-        return { success: true, id: restaurant.id };
+        // Try to pull a Place ID (or name + location) out of the URL.
+        const placeIdMatch = resolvedUrl.match(/!1s(0x[0-9a-f]+:0x[0-9a-f]+)/i);
+        const cidMatch = resolvedUrl.match(/[?&]cid=(\d+)/);
+        const placeId = placeIdMatch?.[1] || cidMatch?.[1];
+        if (!placeId) {
+          return {
+            success: false as const,
+            error: "Could not extract a place ID from this URL.",
+          };
+        }
+
+        const googleKey = ctx.env.GOOGLE_PLACES_API_KEY;
+        if (!googleKey) {
+          throw new TRPCError({
+            code: "SERVICE_UNAVAILABLE",
+            message: "Place resolver not configured",
+          });
+        }
+
+        // Fetch Place Details for the resolved ID.
+        try {
+          const fields = "place_id,name,formatted_address,geometry,types,rating,user_ratings_total,photos,website,formatted_phone_number";
+          const apiUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=${fields}&key=${googleKey}`;
+          const res = await fetch(apiUrl, { signal: AbortSignal.timeout(5000) });
+          if (!res.ok) {
+            return { success: false as const, error: "Place lookup failed." };
+          }
+          const data = (await res.json()) as { result?: any; status?: string };
+          if (!data.result) {
+            return { success: false as const, error: "Place not found." };
+          }
+
+          const d = data.result;
+          const restaurantId = `google_${d.place_id}`;
+          const restaurant = {
+            id: restaurantId,
+            name: d.name || "Unknown",
+            cuisineType:
+              (d.types || []).find(
+                (t: string) => !["restaurant", "food", "point_of_interest", "establishment"].includes(t)
+              ) || "Restaurant",
+            address: d.formatted_address || "",
+            city: "",
+            state: "",
+            zipCode: "",
+            latitude: d.geometry?.location?.lat || 0,
+            longitude: d.geometry?.location?.lng || 0,
+            phone: d.formatted_phone_number,
+            website: d.website,
+            ratings: {
+              google: d.rating,
+              googleReviewCount: d.user_ratings_total,
+              aggregated: d.rating || 0,
+              totalReviews: d.user_ratings_total || 0,
+            },
+            photos: (d.photos || [])
+              .slice(0, 10)
+              .map(
+                (p: any) =>
+                  `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${p.photo_reference}&key=${googleKey}`
+              ),
+            sources: ["google-share"],
+            scrapedAt: new Date().toISOString(),
+          };
+
+          // Cache the resolved record under a user-scoped key so it can't
+          // be used to poison shared postal-code keys. Preserves the old
+          // "you can look this up again" behavior without exposing the
+          // shared namespace to arbitrary writes.
+          const key = `shared:${input.userId}`;
+          await cacheRestaurants(db, key, [restaurant], ["google-share"]);
+
+          return {
+            success: true as const,
+            restaurant,
+            restaurantId,
+          };
+        } catch (err) {
+          return {
+            success: false as const,
+            error: err instanceof Error ? err.message : "Lookup failed.",
+          };
+        }
       }),
 
     // =========================================================================
