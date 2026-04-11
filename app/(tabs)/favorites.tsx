@@ -282,7 +282,7 @@ export default function FavoritesScreen() {
       onToggleExpand={() => handleToggleExpand(item.id)}
       onToggleFavorite={() => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        toggleFavorite(item.id);
+        toggleFavorite(item);
       }}
       notes={getRestaurantNotes(item.id)}
       onNotesChange={(text) => updateRestaurantNotes(item.id, text)}

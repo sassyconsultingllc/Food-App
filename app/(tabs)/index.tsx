@@ -277,6 +277,7 @@ export default function HomeScreen() {
         <ThemedText type="title" style={styles.title}>Foodie Finder</ThemedText>
         <UserAvatar
           displayName={preferences.displayName ?? ""}
+          profilePhotoUri={preferences.profilePhotoUri}
           onPress={() => setShowProfileModal(true)}
           colors={colors}
         />
@@ -455,11 +456,13 @@ export default function HomeScreen() {
         onClose={() => setShowProfileModal(false)}
         displayName={preferences.displayName ?? ""}
         homeZip={preferences.defaultZipCode || preferences.defaultPostalCode || ""}
-        onSave={(name, zip) => {
+        profilePhotoUri={preferences.profilePhotoUri}
+        onSave={(name, zip, profilePhotoUri) => {
           savePreferences({
             displayName: name,
             defaultZipCode: zip,
             defaultPostalCode: zip,
+            profilePhotoUri,
           });
           if (zip && isValidPostalCode(zip)) {
             setZipCode(zip);

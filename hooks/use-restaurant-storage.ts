@@ -23,6 +23,7 @@ import { useRestaurantSearchContext } from "@/context/restaurant-search-context"
 const STORAGE_KEYS = {
   PREFERENCES: "foodie_finder_preferences",
   FAVORITES: "foodie_finder_favorites",
+  FAVORITES_DATA: "foodie_finder_favorites_data",
   CACHED_RESTAURANTS: "foodie_finder_cached_restaurants",
   CACHE_TIMESTAMP: "foodie_finder_cache_timestamp",
   PERSONAL_NOTES: "foodie_finder_personal_notes",
@@ -56,6 +57,7 @@ export function useRestaurantStorage() {
   const [restaurantsLoading, setRestaurantsLoading] = useState(false);
   const [restaurantsError, setRestaurantsError] = useState<string | null>(null);
   const [personalNotes, setPersonalNotes] = useState<Record<string, string>>({});
+  const [favoritesData, setFavoritesData] = useState<Record<string, Restaurant>>({});
   const [cacheLoaded, setCacheLoaded] = useState(false);
 
   // Shared search params from context so all tabs stay in sync
@@ -80,6 +82,33 @@ export function useRestaurantStorage() {
         const notesStored = await AsyncStorage.getItem(STORAGE_KEYS.PERSONAL_NOTES);
         if (notesStored) {
           setPersonalNotes(JSON.parse(notesStored));
+        }
+
+        // Load favorites data (full restaurant snapshots, independent of search cache)
+        const favoritesStored = await AsyncStorage.getItem(STORAGE_KEYS.FAVORITES_DATA);
+        if (favoritesStored) {
+          try {
+            const parsedFavorites: Record<string, Restaurant> = JSON.parse(favoritesStored);
+            setFavoritesData(parsedFavorites);
+            // Reconcile: preferences.favorites should match the keys of favoritesData.
+            // Drop any zombie IDs that have no backing data.
+            const reconciledIds = Object.keys(parsedFavorites);
+            const prefIds = loadedPrefs.favorites || [];
+            const needsReconcile =
+              reconciledIds.length !== prefIds.length ||
+              reconciledIds.some((id) => !prefIds.includes(id));
+            if (needsReconcile) {
+              const reconciled = { ...loadedPrefs, favorites: reconciledIds };
+              setPreferences(reconciled);
+              await AsyncStorage.setItem(
+                STORAGE_KEYS.PREFERENCES,
+                JSON.stringify(reconciled)
+              );
+              loadedPrefs = reconciled;
+            }
+          } catch (e) {
+            console.error("Error parsing favorites data:", e);
+          }
         }
 
         // Seed shared context with saved zip on first mount only (don't overwrite an active search)
@@ -424,13 +453,44 @@ export function useRestaurantStorage() {
     return restaurants;
   }, [restaurants, searchWithNewParams]);
 
-  // Toggle favorite status
-  const toggleFavorite = useCallback(async (restaurantId: string) => {
-    const newFavorites = preferences.favorites.includes(restaurantId)
-      ? preferences.favorites.filter((id) => id !== restaurantId)
-      : [...preferences.favorites, restaurantId];
-    await savePreferences({ favorites: newFavorites });
-  }, [preferences.favorites, savePreferences]);
+  // Toggle favorite status.
+  // Accepts either a full Restaurant (preferred — persists a snapshot so the
+  // Favorites tab survives search changes / cache expiry) or a bare id (legacy;
+  // falls back to looking up the current in-memory restaurants list).
+  const toggleFavorite = useCallback(async (restaurantOrId: Restaurant | string) => {
+    const restaurant: Restaurant | undefined =
+      typeof restaurantOrId === "string"
+        ? favoritesData[restaurantOrId] ?? restaurants.find((r) => r.id === restaurantOrId)
+        : restaurantOrId;
+
+    const restaurantId =
+      typeof restaurantOrId === "string" ? restaurantOrId : restaurantOrId.id;
+
+    const isCurrentlyFavorite = !!favoritesData[restaurantId];
+    const nextData = { ...favoritesData };
+
+    if (isCurrentlyFavorite) {
+      delete nextData[restaurantId];
+    } else {
+      if (!restaurant) {
+        console.warn(
+          `[useRestaurantStorage] Cannot favorite ${restaurantId}: no restaurant data available`
+        );
+        return;
+      }
+      nextData[restaurantId] = restaurant;
+    }
+
+    setFavoritesData(nextData);
+    await AsyncStorage.setItem(
+      STORAGE_KEYS.FAVORITES_DATA,
+      JSON.stringify(nextData)
+    );
+
+    // Keep preferences.favorites in sync so isFavorite() and any downstream
+    // code that reads preferences continues to work.
+    await savePreferences({ favorites: Object.keys(nextData) });
+  }, [favoritesData, restaurants, savePreferences]);
 
   // Check if restaurant is favorite
   const isFavorite = useCallback((restaurantId: string) => {
@@ -504,10 +564,12 @@ export function useRestaurantStorage() {
     return filtered[randomIndex];
   }, [getRestaurantsWithDistance]);
 
-  // Get favorite restaurants
+  // Get favorite restaurants from the persistent favorites snapshot.
+  // Independent of the current search results — favorites survive zip changes,
+  // cache expiry, and cold starts.
   const getFavoriteRestaurants = useCallback((): Restaurant[] => {
-    return restaurants.filter((r) => preferences.favorites.includes(r.id));
-  }, [restaurants, preferences.favorites]);
+    return Object.values(favoritesData);
+  }, [favoritesData]);
 
   // Get restaurant by ID
   const getRestaurantById = useCallback((id: string): Restaurant | undefined => {

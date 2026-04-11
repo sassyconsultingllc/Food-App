@@ -63,7 +63,9 @@ export function MenuSection({
   const [fullscreenVisible, setFullscreenVisible] = useState(false);
   const [fullscreenIndex, setFullscreenIndex] = useState(0);
   const [uploading, setUploading] = useState(false);
-  const [userPhotos, setUserPhotos] = useState<string[]>([]);
+  // apiMenuPhotos holds user-uploaded photos from the R2-backed
+  // /api/menu/:restaurantId endpoint. They persist across app launches
+  // and are visible to other users.
   const [apiMenuPhotos, setApiMenuPhotos] = useState<string[]>([]);
 
   // Fetch menu photos from worker API on mount
@@ -146,25 +148,19 @@ export function MenuSection({
     [isMenuLike, visionApiKey]
   );
 
-  // Combine all menu photo sources — user uploads first (they're the most
-  // recent user intent and must never be hidden behind the 5-cap), then R2
-  // API photos, then classified Google photos. Dedupe + cap at 5.
+  // Combine all menu photo sources — user-uploaded (R2-backed) first so
+  // they take priority over classified Google photos. Dedupe + cap at 5.
   const allMenuPhotos = Array.from(
     new Set<string>([
-      ...userPhotos,
       ...apiMenuPhotos,
       ...(externalMenuPhotos || []),
     ])
   ).slice(0, 5);
 
   // While the classifier is running and we have NO confirmed menu photos
-  // yet (and no user uploads / API photos), render a "searching" state
-  // instead of nothing — the section stays visible and the user sees progress.
+  // yet, render a "searching" state instead of flashing arbitrary photos.
   const isSearching =
-    classifying &&
-    allMenuPhotos.length === 0 &&
-    userPhotos.length === 0 &&
-    apiMenuPhotos.length === 0;
+    classifying && allMenuPhotos.length === 0 && apiMenuPhotos.length === 0;
 
   const hasMenuContent = allMenuPhotos.length > 0 || menuUrl || isSearching;
 
@@ -172,6 +168,59 @@ export function MenuSection({
     setFullscreenIndex(index);
     setFullscreenVisible(true);
   };
+
+  /**
+   * Upload one or more menu photos to the worker.
+   *
+   * The worker accepts multipart/form-data at POST /api/menu/:restaurantId/upload,
+   * validates each file's MIME type and size, stores it in R2, writes
+   * metadata to D1, and returns an array of public image URLs. We then
+   * append those URLs to apiMenuPhotos so they show up immediately without
+   * waiting for the next mount-time fetch.
+   */
+  const uploadAssetsToServer = useCallback(
+    async (assets: { uri: string; mimeType?: string | null; fileName?: string | null }[]) => {
+      if (!assets.length) return [] as string[];
+
+      const baseUrl = getApiBaseUrl();
+      const formData = new FormData();
+
+      assets.forEach((asset, index) => {
+        const mimeType = asset.mimeType || "image/jpeg";
+        const extFromMime: Record<string, string> = {
+          "image/jpeg": "jpg",
+          "image/png": "png",
+          "image/webp": "webp",
+          "image/heic": "heic",
+        };
+        const ext = extFromMime[mimeType] || "jpg";
+        const name = asset.fileName || `menu_${Date.now()}_${index}.${ext}`;
+        // React Native's FormData takes { uri, name, type } objects
+        formData.append("photo", {
+          uri: asset.uri,
+          name,
+          type: mimeType,
+        } as unknown as Blob);
+      });
+
+      const res = await fetch(`${baseUrl}/api/menu/${restaurantId}/upload`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.text().catch(() => "Upload failed");
+        throw new Error(err || `Upload failed (${res.status})`);
+      }
+
+      const data = await res.json() as { ok?: boolean; uploaded?: string[]; error?: string };
+      if (!data.ok || !data.uploaded?.length) {
+        throw new Error(data.error || "Upload failed");
+      }
+      return data.uploaded;
+    },
+    [restaurantId]
+  );
 
   const handleUploadPhoto = useCallback(async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -200,14 +249,19 @@ export function MenuSection({
         return;
       }
 
-      const newPhotos = validAssets.map((a) => a.uri);
-      setUserPhotos((prev) => [...prev, ...newPhotos]);
+      const uploadedUrls = await uploadAssetsToServer(validAssets);
+      setApiMenuPhotos((prev) => [...uploadedUrls, ...prev]);
+      Alert.alert(
+        "Menu photos shared",
+        `Uploaded ${uploadedUrls.length} photo${uploadedUrls.length === 1 ? "" : "s"} for other diners to see.`
+      );
     } catch (error) {
-      Alert.alert("Upload failed", "Could not upload menu photo. Try again later.");
+      const msg = error instanceof Error ? error.message : String(error);
+      Alert.alert("Upload failed", msg || "Could not upload menu photo. Try again later.");
     } finally {
       setUploading(false);
     }
-  }, [restaurantId]);
+  }, [filterMenuAssets, visionApiKey, uploadAssetsToServer]);
 
   const handleTakePhoto = useCallback(async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -222,16 +276,30 @@ export function MenuSection({
 
     if (result.canceled) return;
 
-    const valid = await filterMenuAssets(result.assets);
-    if (visionApiKey && !valid.length) {
+    setUploading(true);
+    try {
+      const valid = await filterMenuAssets(result.assets);
+      if (visionApiKey && !valid.length) {
+        Alert.alert(
+          "Not a menu",
+          "We couldn't detect menu text in this photo. Please try another shot."
+        );
+        return;
+      }
+
+      const uploadedUrls = await uploadAssetsToServer(valid);
+      setApiMenuPhotos((prev) => [...uploadedUrls, ...prev]);
       Alert.alert(
-        "Not a menu",
-        "We couldn't detect menu text in this photo. Please try another shot."
+        "Menu photo shared",
+        "Your photo was uploaded and is now visible to other diners."
       );
-      return;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      Alert.alert("Upload failed", msg || "Could not upload menu photo. Try again later.");
+    } finally {
+      setUploading(false);
     }
-    setUserPhotos((prev) => [...prev, ...valid.map((v) => v.uri)]);
-  }, [filterMenuAssets, visionApiKey]);
+  }, [filterMenuAssets, visionApiKey, uploadAssetsToServer]);
 
   if (!hasMenuContent) {
     return null;
@@ -288,37 +356,62 @@ export function MenuSection({
 
       {/* Action Buttons */}
       <View style={styles.menuActions}>
-        {menuUrl && (
+        {/* Primary CTA — if we already have menu photos in the app, tap
+            opens the fullscreen in-app viewer so users don't have to
+            leave the app to see the menu. Only falls back to the external
+            website when no photos exist yet. */}
+        {allMenuPhotos.length > 0 ? (
+          <Pressable
+            onPress={() => openFullscreen(0)}
+            style={[styles.viewMenuButton, { backgroundColor: colors.accent }]}
+          >
+            <IconSymbol name="doc.text.magnifyingglass" size={18} color={AppColors.white} />
+            <ThemedText style={styles.viewMenuText}>
+              View Full Menu ({allMenuPhotos.length} {allMenuPhotos.length === 1 ? "page" : "pages"})
+            </ThemedText>
+          </Pressable>
+        ) : menuUrl ? (
           <Pressable
             onPress={() => Linking.openURL(menuUrl)}
             style={[styles.viewMenuButton, { backgroundColor: colors.accent }]}
           >
             <IconSymbol name="safari.fill" size={18} color={AppColors.white} />
-            <ThemedText style={styles.viewMenuText}>View Full Menu</ThemedText>
+            <ThemedText style={styles.viewMenuText}>Visit Restaurant Website</ThemedText>
           </Pressable>
-        )}
+        ) : null}
+
         <View style={styles.uploadRow}>
           <Pressable
             onPress={handleUploadPhoto}
             disabled={uploading}
-            style={[styles.addPhotoButton, { borderColor: colors.accent }]}
+            style={({ pressed }) => [
+              styles.halfButton,
+              { borderColor: colors.accent, opacity: pressed ? 0.85 : 1 },
+            ]}
           >
             {uploading ? (
               <ActivityIndicator size="small" color={colors.accent} />
             ) : (
               <>
                 <IconSymbol name="photo.badge.plus" size={16} color={colors.accent} />
-                <ThemedText style={[styles.addPhotoText, { color: colors.accent }]}>
-                  Add Photo
+                <ThemedText style={[styles.halfButtonText, { color: colors.accent }]}>
+                  Upload
                 </ThemedText>
               </>
             )}
           </Pressable>
           <Pressable
             onPress={handleTakePhoto}
-            style={[styles.cameraButton, { borderColor: colors.accent }]}
+            disabled={uploading}
+            style={({ pressed }) => [
+              styles.halfButton,
+              { borderColor: colors.accent, opacity: pressed ? 0.85 : 1 },
+            ]}
           >
             <IconSymbol name="camera.fill" size={16} color={colors.accent} />
+            <ThemedText style={[styles.halfButtonText, { color: colors.accent }]}>
+              Camera
+            </ThemedText>
           </Pressable>
         </View>
       </View>
@@ -443,41 +536,22 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: Spacing.sm,
   },
-  uploadButton: {
+  halfButton: {
     flex: 1,
+    flexBasis: 0,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.sm,
-    gap: 8,
-  },
-  uploadButtonText: {
-    color: AppColors.white,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  addPhotoButton: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
     borderRadius: BorderRadius.sm,
     borderWidth: 1.5,
     gap: 6,
+    minHeight: 44,
   },
-  addPhotoText: {
-    fontSize: 13,
+  halfButtonText: {
+    fontSize: 14,
     fontWeight: "600",
-  },
-  cameraButton: {
-    width: 48,
-    height: 48,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1.5,
-    justifyContent: "center",
-    alignItems: "center",
   },
   fullscreenContainer: {
     flex: 1,

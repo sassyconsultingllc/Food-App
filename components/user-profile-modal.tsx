@@ -2,10 +2,13 @@
  * User Profile Modal — Local Only
  * © 2025 Sassy Consulting - A Veteran Owned Company
  *
- * No account, no sync. Name and home zip stored on-device.
+ * No account, no sync. Name, home zip, and profile picture are stored
+ * on-device. The profile picture is saved to the app's persistent
+ * document directory so it survives across launches but never leaves
+ * the device.
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Modal,
   View,
@@ -15,9 +18,14 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
+import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
+import { Directory, File, Paths } from "expo-file-system";
 
 import { ThemedText } from "./themed-text";
 import { IconSymbol } from "./ui/icon-symbol";
@@ -31,7 +39,24 @@ interface UserProfileModalProps {
   onClose: () => void;
   displayName: string;
   homeZip: string;
-  onSave: (name: string, zip: string) => void;
+  profilePhotoUri?: string;
+  onSave: (name: string, zip: string, profilePhotoUri?: string) => void;
+}
+
+/**
+ * Copy a picked image into the app's persistent document directory and
+ * return the new file:// URI. This ensures the image survives across app
+ * launches even if the picker's temp cache is purged by the OS.
+ */
+function persistProfilePhoto(sourceUri: string): string {
+  const profileDir = new Directory(Paths.document, "profile");
+  if (!profileDir.exists) {
+    profileDir.create({ intermediates: true, idempotent: true });
+  }
+  const ext = sourceUri.split(".").pop()?.split("?")[0]?.toLowerCase() || "jpg";
+  const destFile = new File(profileDir, `avatar_${Date.now()}.${ext}`);
+  new File(sourceUri).copy(destFile);
+  return destFile.uri;
 }
 
 export function UserProfileModal({
@@ -39,6 +64,7 @@ export function UserProfileModal({
   onClose,
   displayName,
   homeZip,
+  profilePhotoUri,
   onSave,
 }: UserProfileModalProps) {
   const colorScheme = useColorScheme();
@@ -48,20 +74,61 @@ export function UserProfileModal({
 
   const [name, setName] = useState(displayName);
   const [zip, setZip] = useState(homeZip);
+  const [photoUri, setPhotoUri] = useState<string | undefined>(profilePhotoUri);
+  const [picking, setPicking] = useState(false);
 
   // Sync if parent values change while modal is closed
   useEffect(() => {
     if (visible) {
       setName(displayName);
       setZip(homeZip);
+      setPhotoUri(profilePhotoUri);
     }
-  }, [visible, displayName, homeZip]);
+  }, [visible, displayName, homeZip, profilePhotoUri]);
+
+  const handlePickPhoto = useCallback(async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(
+        "Permission needed",
+        "Allow photo access so you can pick a profile picture.",
+      );
+      return;
+    }
+
+    setPicking(true);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      const persisted = persistProfilePhoto(result.assets[0].uri);
+      setPhotoUri(persisted);
+    } catch (err) {
+      console.warn("[profile] photo pick failed:", err);
+      Alert.alert("Couldn't load photo", "Try a different image.");
+    } finally {
+      setPicking(false);
+    }
+  }, []);
+
+  const handleRemovePhoto = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setPhotoUri(undefined);
+  }, []);
 
   const handleSave = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    onSave(name.trim(), zip.trim());
+    onSave(name.trim(), zip.trim(), photoUri);
     onClose();
   };
+
+  const trimmedName = name.trim();
 
   return (
     <Modal
@@ -87,16 +154,46 @@ export function UserProfileModal({
           {/* Handle */}
           <View style={[styles.handle, { backgroundColor: colors.border }]} />
 
-          {/* Avatar */}
-          <View style={[styles.avatarLarge, { backgroundColor: AppColors.copper + "22", borderColor: AppColors.copper }]}>
-            {name.trim() ? (
+          {/* Avatar — tap to pick a new photo */}
+          <Pressable
+            onPress={handlePickPhoto}
+            disabled={picking}
+            accessibilityRole="button"
+            accessibilityLabel="Change profile picture"
+            style={({ pressed }) => [
+              styles.avatarLarge,
+              {
+                backgroundColor: AppColors.copper + "22",
+                borderColor: AppColors.copper,
+                opacity: pressed ? 0.85 : 1,
+              },
+            ]}
+          >
+            {picking ? (
+              <ActivityIndicator size="small" color={AppColors.copper} />
+            ) : photoUri ? (
+              <Image source={{ uri: photoUri }} style={styles.avatarPhoto} contentFit="cover" />
+            ) : trimmedName ? (
               <ThemedText style={styles.avatarInitialsLarge}>
-                {name.trim()[0].toUpperCase()}
+                {trimmedName[0].toUpperCase()}
               </ThemedText>
             ) : (
-              <IconSymbol name="person.fill" size={40} color={AppColors.copper} />
+              <IconSymbol name="person.fill" size={32} color={AppColors.copper} />
             )}
-          </View>
+
+            {/* Camera badge overlay */}
+            <View style={[styles.cameraBadge, { backgroundColor: AppColors.copper, borderColor: colors.cardBackground }]}>
+              <IconSymbol name="camera.fill" size={12} color={AppColors.white} />
+            </View>
+          </Pressable>
+
+          {photoUri && (
+            <Pressable onPress={handleRemovePhoto} hitSlop={8} style={styles.removePhotoLink}>
+              <ThemedText style={[styles.removePhotoText, { color: colors.textSecondary }]}>
+                Remove photo
+              </ThemedText>
+            </Pressable>
+          )}
 
           <ThemedText type="subtitle" style={styles.sheetTitle}>
             Your Profile
@@ -193,13 +290,16 @@ export function UserProfileModal({
 /** Reusable avatar circle — use in header */
 export function UserAvatar({
   displayName,
+  profilePhotoUri,
   onPress,
   colors,
 }: {
   displayName: string;
+  profilePhotoUri?: string;
   onPress: () => void;
   colors: any;
 }) {
+  const trimmed = displayName.trim();
   return (
     <Pressable
       onPress={onPress}
@@ -210,12 +310,14 @@ export function UserAvatar({
         { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.85 : 1 },
       ]}
     >
-      {displayName.trim() ? (
+      {profilePhotoUri ? (
+        <Image source={{ uri: profilePhotoUri }} style={styles.avatarButtonPhoto} contentFit="cover" />
+      ) : trimmed ? (
         <ThemedText style={[styles.avatarInitials, { color: AppColors.copper }]}>
-          {displayName.trim()[0].toUpperCase()}
+          {trimmed[0].toUpperCase()}
         </ThemedText>
       ) : (
-        <IconSymbol name="person.fill" size={20} color={colors.textSecondary} />
+        <IconSymbol name="person.fill" size={18} color={colors.textSecondary} />
       )}
     </Pressable>
   );
@@ -250,12 +352,43 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.xs,
+    overflow: "hidden",
+    position: "relative",
+  },
+  avatarPhoto: {
+    width: "100%",
+    height: "100%",
   },
   avatarInitialsLarge: {
-    fontSize: 36,
+    fontSize: 30,
+    lineHeight: 34,
     fontWeight: "700",
     color: AppColors.copper,
+    textAlign: "center",
+    // Android: strip default font padding so the glyph centers correctly
+    includeFontPadding: false,
+    textAlignVertical: "center",
+  },
+  cameraBadge: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+  },
+  removePhotoLink: {
+    marginBottom: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+  },
+  removePhotoText: {
+    fontSize: 12,
+    textDecorationLine: "underline",
   },
   sheetTitle: {
     marginBottom: Spacing.xs,
@@ -329,9 +462,18 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
+  },
+  avatarButtonPhoto: {
+    width: "100%",
+    height: "100%",
   },
   avatarInitials: {
-    fontSize: 16,
+    fontSize: 15,
+    lineHeight: 17,
     fontWeight: "700",
+    textAlign: "center",
+    includeFontPadding: false,
+    textAlignVertical: "center",
   },
 });

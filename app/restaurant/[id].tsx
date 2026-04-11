@@ -116,7 +116,7 @@ export default function RestaurantDetailScreen() {
 
   const handleFavoritePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    toggleFavorite(restaurant.id);
+    toggleFavorite(restaurant);
   };
 
   const handlePhonePress = () => {

@@ -143,6 +143,7 @@ export interface UserPreferences {
   defaultRadiusUnit?: 'miles' | 'km';  // km for most countries, miles for US/UK
   favorites: string[];
   displayName?: string;          // Local-only profile name
+  profilePhotoUri?: string;      // Local file:// URI to user-picked profile picture
 }
 
 export interface FilterOptions {

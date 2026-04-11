@@ -322,7 +322,7 @@ export default function BrowseScreen() {
         )}
         <RestaurantCard
           restaurant={item}
-          onFavoritePress={() => { playSound("favorite"); toggleFavorite(item.id); }}
+          onFavoritePress={() => { playSound("favorite"); toggleFavorite(item); }}
           isFavorite={isFavorite(item.id)}
           showDistance={true}
           tasteMatch={isTasteMatch}
