@@ -74,10 +74,9 @@ export function useShareHandler(): ShareHandlerResult {
   const processSharedUrl = useCallback(async (url: string) => {
     // Skip if already processing
     if (isProcessing) return;
-    
-    // Check if it's a Google Maps URL
+
+    // Check if it's a Google Maps URL — quietly drop non-matching URLs
     if (!isGoogleMapsUrl(url)) {
-      console.log("[ShareHandler] Not a Google Maps URL:", url);
       return;
     }
 
@@ -86,9 +85,7 @@ export function useShareHandler(): ShareHandlerResult {
 
     try {
       const deviceId = await getDeviceId();
-      
-      console.log("[ShareHandler] Importing:", url);
-      
+
       const result = await importMutation.mutateAsync({
         url,
         userId: deviceId,

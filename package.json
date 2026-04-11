@@ -30,6 +30,13 @@
     "d1:init": "wrangler d1 execute foodie-finder --file=./worker/schema.sql",
     "d1:studio": "wrangler d1 studio foodie-finder"
   },
+  "expo": {
+    "doctor": {
+      "appConfigFieldsNotSyncedCheck": {
+        "enabled": false
+      }
+    }
+  },
   "dependencies": {
     "@bull-board/api": "^6.18.0",
     "@bull-board/express": "^6.18.0",

@@ -116,7 +116,6 @@ export function useRestaurantStorage() {
           const savedZip = loadedPrefs.defaultZipCode || loadedPrefs.defaultPostalCode || "";
           const savedRadius = loadedPrefs.defaultRadius || 10;
           if (savedZip) {
-            console.log('[useRestaurantStorage] Initial sync from preferences:', savedZip, savedRadius);
             setCurrentSearchParams({ zipCode: savedZip, radius: savedRadius });
           }
           initialSyncDone.current = true;
