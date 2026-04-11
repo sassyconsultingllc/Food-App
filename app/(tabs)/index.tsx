@@ -27,7 +27,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SpinnerWheel } from "@/components/spinner-wheel";
 import { SpinnerFiltersBar, SpinnerFilters, DEFAULT_FILTERS } from "@/components/spinner-filters";
-import { PersonalNotesModal } from "@/components/personal-notes-modal";
 import { Celebration } from "@/components/celebration";
 import { UserProfileModal, UserAvatar } from "@/components/user-profile-modal";
 import { CulversFlavorWidget } from "@/components/culvers-calendar";
@@ -72,15 +71,7 @@ export default function HomeScreen() {
   const {
     restaurants,
     preferences,
-    loading,
     savePreferences,
-    toggleFavorite,
-    isFavorite,
-    getRandomRestaurant,
-    getFavoriteRestaurants,
-    getRestaurantById,
-    updateRestaurantNotes,
-    getRestaurantNotes,
     searchWithNewParams,
   } = useRestaurantStorage();
 
@@ -128,7 +119,6 @@ export default function HomeScreen() {
   const [locationName, setLocationName] = useState<string | null>(null);
   const [filters, setFilters] = useState<SpinnerFilters>(DEFAULT_FILTERS);
   const [showCelebration, setShowCelebration] = useState(false);
-  const [showNotesModal, setShowNotesModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
 
   // React to GPS updates — only seeds the search if no saved preference zip exists
@@ -148,12 +138,17 @@ export default function HomeScreen() {
       city && locationState ? `${city}, ${locationState}` : locationZipCode
     );
 
-    searchWithNewParams(locationZipCode, radius);
+    // Preserve the user's saved radius instead of clobbering it with the
+    // local component state (which is 5 by default). Only overwrite the
+    // radius if the user has no saved preference yet.
+    const savedRadius = preferences.defaultRadius ?? radius;
+    searchWithNewParams(locationZipCode, savedRadius);
     savePreferences({
       defaultZipCode: locationZipCode,
       defaultPostalCode: locationZipCode,
       defaultCountryCode: locationCountryCode ?? undefined,
-      defaultRadius: radius,
+      // Do NOT include defaultRadius here — we'd overwrite the user's
+      // saved preference with whatever local state happens to hold.
     });
   }, [
     city,
@@ -166,6 +161,7 @@ export default function HomeScreen() {
     searchWithNewParams,
     preferences.defaultZipCode,
     preferences.defaultPostalCode,
+    preferences.defaultRadius,
   ]);
 
   // Animation values
@@ -437,17 +433,6 @@ export default function HomeScreen() {
         <Celebration
           visible={showCelebration}
           hapticsEnabled={soundSettings.hapticsEnabled}
-        />
-      )}
-
-      {/* Personal notes modal */}
-      {selectedRestaurant && (
-        <PersonalNotesModal
-          visible={showNotesModal}
-          onClose={() => setShowNotesModal(false)}
-          restaurantName={selectedRestaurant.name}
-          currentNotes={getRestaurantNotes(selectedRestaurant.id) || ""}
-          onSave={(notes) => updateRestaurantNotes(selectedRestaurant.id, notes)}
         />
       )}
 

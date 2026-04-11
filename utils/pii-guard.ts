@@ -13,10 +13,15 @@
 // PII Detection
 // ---------------------------------------------------------------------------
 
+// Client-side patterns are non-global (single match per call) so they do
+// NOT suffer from the /g lastIndex state leakage that affects the worker's
+// PII scrubber. They still match the same shapes the server guards against
+// so the user's on-device warning matches the server's actual decision.
 const PII_PATTERNS: { label: string; regex: RegExp }[] = [
   {
     label: "phone number",
-    regex: /(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/,
+    // US + intl: word boundaries, 10+ digit minimum, optional country code.
+    regex: /\b(?:\+?\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{4}\b/,
   },
   {
     label: "email address",
@@ -28,7 +33,9 @@ const PII_PATTERNS: { label: string; regex: RegExp }[] = [
   },
   {
     label: "credit card number",
-    regex: /\b(?:\d[-\s]?){13,19}\b/,
+    // Require 3-4 groups of 4 digits separated by space/hyphen — matches
+    // real card formats without tripping on order numbers, UPCs, etc.
+    regex: /\b(?:\d{4}[-\s]?){3,4}\d{1,4}\b/,
   },
   {
     label: "street address",

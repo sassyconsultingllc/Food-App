@@ -22,6 +22,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PhotoCarousel } from "@/components/photo-carousel";
 import { MenuSection } from "@/components/menu-section";
 import { PublicNotesSection } from "@/components/public-notes-section";
+import { PersonalNotesModal } from "@/components/personal-notes-modal";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { IconSymbol } from "@/components/ui/icon-symbol";
@@ -58,26 +59,31 @@ export default function RestaurantDetailScreen() {
 
   // Personal notes
   const currentNotes = restaurant ? (getRestaurantNotes(restaurant.id) || '') : '';
+  const [notesModalVisible, setNotesModalVisible] = useState(false);
 
-  // Track this restaurant as recently viewed â€” only after data has loaded
+  // Track this restaurant as recently viewed — only after data has loaded
   useEffect(() => {
     if (id && restaurant) {
       addToRecentlyViewed(id);
     }
   }, [id, restaurant, addToRecentlyViewed]);
 
-  // Find similar restaurants once when component mounts (id + aiAvailable)
-  // getFavoriteRestaurants and recentlyViewedIds are intentionally excluded from deps —
-  // they produce new array references every render and would cause an infinite loop.
+  // Find similar restaurants when id, restaurant, or AI availability changes.
+  // Keyed on !!restaurant (not restaurant itself) so late-loading restaurant
+  // data triggers the fetch instead of being skipped because id was stable.
+  // getFavoriteRestaurants and recentlyViewedIds are intentionally excluded
+  // from deps — they produce new array references every render and would
+  // cause an infinite loop.
+  const restaurantReady = !!restaurant;
   useEffect(() => {
-    if (id && restaurant && aiAvailable) {
+    if (id && restaurantReady && aiAvailable) {
       const favoriteIds = getFavoriteRestaurants().map(f => f.id);
       const excludeIds = [id, ...favoriteIds, ...recentlyViewedIds.filter(r => r !== id)];
       findSimilar(id, excludeIds);
     }
     return () => clearSimilar();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, aiAvailable]);
+  }, [id, restaurantReady, aiAvailable]);
 
   // LOADING STATE: Don't show "not found" while data is still loading
   if (!restaurant && dataLoading) {
@@ -209,12 +215,14 @@ export default function RestaurantDetailScreen() {
             <ThemedText style={[styles.cuisineType, { color: colors.textSecondary }]}>
               {restaurant.cuisineType}
             </ThemedText>
-            <View style={[styles.ratingBadgeLarge, { backgroundColor: AppColors.skyBlue }]}>
-              <IconSymbol name="star.fill" size={16} color={AppColors.white} />
-              <ThemedText style={styles.ratingTextLarge}>
-                {restaurant.ratings.aggregated.toFixed(1)}
-              </ThemedText>
-            </View>
+            {(restaurant.ratings?.aggregated ?? 0) > 0 && (
+              <View style={[styles.ratingBadgeLarge, { backgroundColor: AppColors.skyBlue }]}>
+                <IconSymbol name="star.fill" size={16} color={AppColors.white} />
+                <ThemedText style={styles.ratingTextLarge}>
+                  {restaurant.ratings!.aggregated.toFixed(1)}
+                </ThemedText>
+              </View>
+            )}
           </View>
         </View>
 
@@ -337,7 +345,7 @@ export default function RestaurantDetailScreen() {
           classifying={classifyingPhotos}
         />
 
-        {/* Personal Notes — inline quick write */}
+        {/* Personal Notes — tap to open the modal with quick-note chips. */}
         <View style={[styles.section, { backgroundColor: colors.cardBackground }]}>
           <View style={styles.sectionHeader}>
             <IconSymbol name="note.text" size={20} color={AppColors.lightOrange} />
@@ -345,15 +353,32 @@ export default function RestaurantDetailScreen() {
               My Notes
             </ThemedText>
           </View>
-          <TextInput
-            style={[styles.inlineNoteInput, { color: colors.text, backgroundColor: colors.surface, borderColor: colors.border }]}
-            value={currentNotes}
-            onChangeText={(text) => updateRestaurantNotes(restaurant.id, text)}
-            placeholder="Quick note... (e.g. get the fish tacos)"
-            placeholderTextColor={colors.textSecondary}
-            multiline
-            maxLength={500}
-          />
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setNotesModalVisible(true);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={currentNotes ? "Edit personal note" : "Add personal note"}
+            style={({ pressed }) => [
+              styles.inlineNoteInput,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                opacity: pressed ? 0.9 : 1,
+                minHeight: 56,
+                justifyContent: "center",
+              },
+            ]}
+          >
+            {currentNotes ? (
+              <ThemedText style={{ color: colors.text }}>{currentNotes}</ThemedText>
+            ) : (
+              <ThemedText style={{ color: colors.textSecondary }}>
+                Tap to add a private note (e.g. &quot;get the fish tacos&quot;)
+              </ThemedText>
+            )}
+          </Pressable>
         </View>
 
         {/* Community Tips — full modal with suggestions */}
@@ -363,7 +388,7 @@ export default function RestaurantDetailScreen() {
         />
 
         {/* Ratings Breakdown — shows actual scraper sources (Google / Foursquare / HERE) */}
-        {(restaurant.ratings.google || restaurant.ratings.foursquare || restaurant.ratings.here) && (
+        {(restaurant.ratings?.google || restaurant.ratings?.foursquare || restaurant.ratings?.here) && (
           <View style={[styles.section, { backgroundColor: colors.cardBackground }]}>
             <ThemedText type="subtitle" style={styles.sectionTitle}>
               Ratings
@@ -658,6 +683,15 @@ export default function RestaurantDetailScreen() {
           </ThemedText>
         </View>
       </ScrollView>
+
+      {/* Personal notes editor with quick-chip suggestions */}
+      <PersonalNotesModal
+        visible={notesModalVisible}
+        onClose={() => setNotesModalVisible(false)}
+        restaurantName={restaurant.name}
+        currentNotes={currentNotes}
+        onSave={(notes) => updateRestaurantNotes(restaurant.id, notes)}
+      />
     </ThemedView>
   );
 }

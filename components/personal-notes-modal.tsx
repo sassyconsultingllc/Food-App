@@ -55,17 +55,36 @@ export function PersonalNotesModal({
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
   const [notes, setNotes] = useState(currentNotes);
-  
+  // Track the last saved value so we can detect unsaved edits on dismiss.
+  const savedRef = React.useRef(currentNotes);
+
   useEffect(() => {
-    setNotes(currentNotes);
+    if (visible) {
+      setNotes(currentNotes);
+      savedRef.current = currentNotes;
+    }
   }, [currentNotes, visible]);
-  
+
   const handleSave = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    onSave(notes.trim());
+    const trimmed = notes.trim();
+    onSave(trimmed);
+    savedRef.current = trimmed;
     onClose();
   };
-  
+
+  // Save-on-dismiss: if the user swipes the sheet down on iOS or hits the
+  // Android back button, Modal's onRequestClose fires. We auto-persist any
+  // unsaved edits so the user never loses typed text.
+  const handleDismiss = React.useCallback(() => {
+    const trimmed = notes.trim();
+    if (trimmed !== savedRef.current) {
+      onSave(trimmed);
+      savedRef.current = trimmed;
+    }
+    onClose();
+  }, [notes, onClose, onSave]);
+
   const appendQuickNote = (quickNote: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setNotes(prev => prev ? `${prev}\n${quickNote}` : quickNote);
@@ -76,16 +95,16 @@ export function PersonalNotesModal({
       visible={visible}
       animationType="slide"
       presentationStyle="pageSheet"
-      onRequestClose={onClose}
+      onRequestClose={handleDismiss}
     >
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
       >
         <ThemedView style={styles.container}>
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
-            <Pressable onPress={onClose} hitSlop={12}>
+            <Pressable onPress={handleDismiss} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close personal notes">
               <ThemedText style={{ color: colors.textSecondary }}>Cancel</ThemedText>
             </Pressable>
             <View style={styles.headerTitle}>

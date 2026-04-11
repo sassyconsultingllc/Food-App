@@ -456,40 +456,57 @@ export function useRestaurantStorage() {
   // Accepts either a full Restaurant (preferred — persists a snapshot so the
   // Favorites tab survives search changes / cache expiry) or a bare id (legacy;
   // falls back to looking up the current in-memory restaurants list).
+  //
+  // Uses a functional state update so two rapid-fire taps on the same or
+  // different restaurants can't clobber each other via stale closures.
   const toggleFavorite = useCallback(async (restaurantOrId: Restaurant | string) => {
-    const restaurant: Restaurant | undefined =
-      typeof restaurantOrId === "string"
-        ? favoritesData[restaurantOrId] ?? restaurants.find((r) => r.id === restaurantOrId)
-        : restaurantOrId;
-
     const restaurantId =
       typeof restaurantOrId === "string" ? restaurantOrId : restaurantOrId.id;
+    const providedRestaurant: Restaurant | undefined =
+      typeof restaurantOrId === "string" ? undefined : restaurantOrId;
 
-    const isCurrentlyFavorite = !!favoritesData[restaurantId];
-    const nextData = { ...favoritesData };
+    // Compute the next state inside the functional update so we always
+    // see the latest committed value. We still need to resolve the full
+    // Restaurant object, which requires either `providedRestaurant` or a
+    // lookup via the current `restaurants` list / existing snapshot.
+    let nextDataForWrite: Record<string, Restaurant> | null = null;
 
-    if (isCurrentlyFavorite) {
-      delete nextData[restaurantId];
-    } else {
-      if (!restaurant) {
-        console.warn(
-          `[useRestaurantStorage] Cannot favorite ${restaurantId}: no restaurant data available`
-        );
-        return;
+    setFavoritesData((prev) => {
+      const isCurrentlyFavorite = !!prev[restaurantId];
+      const next = { ...prev };
+
+      if (isCurrentlyFavorite) {
+        delete next[restaurantId];
+      } else {
+        const resolved =
+          providedRestaurant ??
+          prev[restaurantId] ??
+          restaurants.find((r) => r.id === restaurantId);
+        if (!resolved) {
+          console.warn(
+            `[useRestaurantStorage] Cannot favorite ${restaurantId}: no restaurant data available`
+          );
+          return prev;
+        }
+        next[restaurantId] = resolved;
       }
-      nextData[restaurantId] = restaurant;
+
+      nextDataForWrite = next;
+      return next;
+    });
+
+    // Persist the snapshot (and sync preferences.favorites) AFTER the state
+    // update has captured the correct next value. If we decided not to change
+    // anything (e.g. missing restaurant data), nextDataForWrite stays null.
+    if (nextDataForWrite) {
+      const snapshot = nextDataForWrite;
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.FAVORITES_DATA,
+        JSON.stringify(snapshot)
+      );
+      await savePreferences({ favorites: Object.keys(snapshot) });
     }
-
-    setFavoritesData(nextData);
-    await AsyncStorage.setItem(
-      STORAGE_KEYS.FAVORITES_DATA,
-      JSON.stringify(nextData)
-    );
-
-    // Keep preferences.favorites in sync so isFavorite() and any downstream
-    // code that reads preferences continues to work.
-    await savePreferences({ favorites: Object.keys(nextData) });
-  }, [favoritesData, restaurants, savePreferences]);
+  }, [restaurants, savePreferences]);
 
   // Check if restaurant is favorite
   const isFavorite = useCallback((restaurantId: string) => {

@@ -432,7 +432,9 @@ async function fetchFromOpenStreetMap(
         phone: tags.phone || tags['contact:phone'],
         website: tags.website || tags['contact:website'],
         priceRange: tags.price_range,
-        cuisineType: formatCuisine(tags.cuisine) || tags.amenity === 'fast_food' ? 'Fast Food' : 'Restaurant',
+        cuisineType:
+          formatCuisine(tags.cuisine) ||
+          (tags.amenity === 'fast_food' ? 'Fast Food' : 'Restaurant'),
         categories: tags.cuisine ? tags.cuisine.split(';').map((c: string) => c.trim()) : [],
         hours: parseOSMHours(tags.opening_hours),
         sources: ['openstreetmap'],

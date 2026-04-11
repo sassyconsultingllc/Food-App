@@ -7,6 +7,7 @@
  */
 
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { publicProcedure, router, adminProcedure } from "./_core/trpc";
 import {
   scrapeRestaurantsByLocation,
@@ -88,12 +89,24 @@ const BLOCKED_PATTERNS: RegExp[] = [
   /\b(?:the\s+)?(?:manager|owner|cook|chef|waiter|waitress|server|host(?:ess)?|cashier|bartender)\s+(?:is\s+)?(?:an?\s+)?(?:idiot|moron|stupid|worthless|trash|garbage)\b/i,
 ];
 
-const PII_PATTERNS: { label: string; regex: RegExp }[] = [
-  { label: "phone", regex: /(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g },
-  { label: "email", regex: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g },
-  { label: "ssn", regex: /\b\d{3}-\d{2}-\d{4}\b/g },
-  { label: "credit_card", regex: /\b(?:\d[-\s]?){13,19}\b/g },
-];
+// Per-call factory for PII regexes — never share module-level /g regexes
+// between test() and replace() because test() advances lastIndex and leaks
+// state across subsequent calls.
+function makeLocalPiiPatterns(): { label: string; regex: RegExp }[] {
+  return [
+    { label: "phone", regex: /\b(?:\+?\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{4}\b/g },
+    { label: "email", regex: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g },
+    { label: "ssn", regex: /\b\d{3}-\d{2}-\d{4}\b/g },
+    { label: "credit_card", regex: /\b(?:\d{4}[-\s]?){3,4}\d{1,4}\b/g },
+  ];
+}
+
+function normalizeForModerationLocal(raw: string): string {
+  const ZW_RE = /[\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g;
+  let s = (raw || "").normalize("NFKC").replace(ZW_RE, "");
+  s = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").normalize("NFC");
+  return s;
+}
 
 function guardPublicNoteLocal(raw: string): {
   blocked: boolean;
@@ -108,8 +121,9 @@ function guardPublicNoteLocal(raw: string): {
   if (text.length > 500) {
     return { blocked: true, reason: "Note is too long (max 500 characters).", cleaned: "", scrubbed: [] };
   }
+  const normalized = normalizeForModerationLocal(text);
   for (const pattern of BLOCKED_PATTERNS) {
-    if (pattern.test(text)) {
+    if (pattern.test(normalized)) {
       return {
         blocked: true,
         reason: "This note contains language that isn't allowed in public comments. Please keep it respectful.",
@@ -120,10 +134,11 @@ function guardPublicNoteLocal(raw: string): {
   }
   let cleaned = text;
   const scrubbed: string[] = [];
-  for (const { label, regex } of PII_PATTERNS) {
+  for (const { label, regex } of makeLocalPiiPatterns()) {
     if (regex.test(cleaned)) {
       scrubbed.push(label);
-      cleaned = cleaned.replace(regex, `[${label} removed]`);
+      const replaceRegex = new RegExp(regex.source, regex.flags);
+      cleaned = cleaned.replace(replaceRegex, `[${label} removed]`);
     }
   }
   cleaned = cleaned.replace(/\s{2,}/g, " ").trim();
@@ -369,7 +384,7 @@ export const restaurantRouter = router({
     .mutation(async ({ input }) => {
       const guard = guardPublicNoteLocal(input.text);
       if (guard.blocked) {
-        throw new Error(guard.reason);
+        throw new TRPCError({ code: "BAD_REQUEST", message: guard.reason });
       }
       if (guard.scrubbed.length > 0) {
         console.log(

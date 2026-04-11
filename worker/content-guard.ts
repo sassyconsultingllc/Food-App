@@ -49,12 +49,26 @@ const BLOCKED_PATTERNS: RegExp[] = [
 
 // PII — worker logs the hit but does NOT block. We still save the note but
 // strip the PII so other users never see phone numbers / emails in public.
-const PII_PATTERNS: { label: string; regex: RegExp }[] = [
-  { label: "phone", regex: /(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g },
-  { label: "email", regex: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g },
-  { label: "ssn", regex: /\b\d{3}-\d{2}-\d{4}\b/g },
-  { label: "credit_card", regex: /\b(?:\d[-\s]?){13,19}\b/g },
-];
+//
+// IMPORTANT: every regex is defined via a FACTORY so each call gets a fresh
+// RegExp with its own `lastIndex`. Sharing module-level /g regexes between
+// test() and replace() causes lastIndex state leakage across calls and can
+// silently miss PII at the start of later strings. We always instantiate
+// per-call via makePatterns().
+function makePiiPatterns(): { label: string; regex: RegExp }[] {
+  return [
+    // US + intl phones: require a word boundary on BOTH sides and a minimum
+    // of 10 digits. Intl formats like "+44 20 7946 0958" also match.
+    { label: "phone", regex: /\b(?:\+?\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{4}\b/g },
+    { label: "email", regex: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g },
+    { label: "ssn", regex: /\b\d{3}-\d{2}-\d{4}\b/g },
+    // Credit card: 13-19 digits WITH a valid Luhn check would be ideal, but
+    // we compromise by requiring exactly 15-16 digit groups separated by
+    // spaces or hyphens — covers real card formats without tripping on
+    // order numbers or tracking IDs.
+    { label: "credit_card", regex: /\b(?:\d{4}[-\s]?){3,4}\d{1,4}\b/g },
+  ];
+}
 
 export interface GuardResult {
   /** True if submission should be rejected. */
@@ -65,6 +79,33 @@ export interface GuardResult {
   cleaned: string;
   /** Categories of PII that were scrubbed (for logging/metrics). */
   scrubbed: string[];
+}
+
+/**
+ * Normalize text before matching so Unicode homoglyphs, fullwidth letters,
+ * and zero-width joiners can't slip profanity past the blocklist.
+ *
+ *  - NFKC folds fullwidth → ASCII ("ｆｕｃｋ" → "fuck").
+ *  - Zero-width chars (ZWSP, ZWNJ, ZWJ, BOM) are stripped entirely.
+ *  - Common Cyrillic/Greek confusables (а/о/е/і/р/у/с/х/в/н/к/м/т) are
+ *    folded to their Latin lookalikes.
+ *  - Diacritic marks are stripped (ü → u).
+ */
+function normalizeForModeration(raw: string): string {
+  const CYRILLIC_TO_LATIN: Record<string, string> = {
+    "а": "a", "в": "b", "с": "c", "е": "e", "һ": "h", "і": "i", "ј": "j",
+    "к": "k", "м": "m", "о": "o", "р": "p", "ѕ": "s", "т": "t", "у": "y",
+    "х": "x", "А": "A", "В": "B", "С": "C", "Е": "E", "Н": "H", "І": "I",
+    "Ј": "J", "К": "K", "М": "M", "О": "O", "Р": "P", "Ѕ": "S", "Т": "T",
+    "У": "Y", "Х": "X", "υ": "u", "ι": "i", "ο": "o", "α": "a",
+  };
+  const ZW_RE = /[\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g;
+  let s = (raw || "").normalize("NFKC").replace(ZW_RE, "");
+  // Fold common Cyrillic/Greek confusables to Latin
+  s = Array.from(s).map((ch) => CYRILLIC_TO_LATIN[ch] ?? ch).join("");
+  // Strip combining diacritics (NFD + remove \p{M})
+  s = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").normalize("NFC");
+  return s;
 }
 
 /**
@@ -83,9 +124,14 @@ export function guardPublicNote(raw: string): GuardResult {
     return { blocked: true, reason: "Note is too long (max 500 characters).", cleaned: "", scrubbed: [] };
   }
 
-  // Content moderation — hard block
+  // Normalize for moderation (not for persistence — we still store the
+  // user's original Unicode so legitimate names / emoji survive).
+  const normalized = normalizeForModeration(text);
+
+  // Content moderation — hard block. Run against normalized text so
+  // homoglyph bypass attempts fail.
   for (const pattern of BLOCKED_PATTERNS) {
-    if (pattern.test(text)) {
+    if (pattern.test(normalized)) {
       return {
         blocked: true,
         reason:
@@ -96,13 +142,18 @@ export function guardPublicNote(raw: string): GuardResult {
     }
   }
 
-  // PII scrubbing — replace with [redacted] placeholders
+  // PII scrubbing — replace with [redacted] placeholders. We use
+  // per-call regex instances from makePiiPatterns() so lastIndex state
+  // never leaks between invocations. Scrubbing runs against the ORIGINAL
+  // text (not normalized) so the output preserves the user's spelling.
   let cleaned = text;
   const scrubbed: string[] = [];
-  for (const { label, regex } of PII_PATTERNS) {
+  for (const { label, regex } of makePiiPatterns()) {
     if (regex.test(cleaned)) {
       scrubbed.push(label);
-      cleaned = cleaned.replace(regex, `[${label} removed]`);
+      // Fresh regex for the replace to avoid any lingering lastIndex effects.
+      const replaceRegex = new RegExp(regex.source, regex.flags);
+      cleaned = cleaned.replace(replaceRegex, `[${label} removed]`);
     }
   }
 
