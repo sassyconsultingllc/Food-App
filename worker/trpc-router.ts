@@ -617,16 +617,32 @@ export const appRouter = router({
         forceRefresh: z.boolean().optional().default(false),
       }))
       .query(async ({ input, ctx }) => {
-        const { zipCode, ...rest } = input;
+        const { zipCode } = input;
         const db = ctx.env.DB;
-        
+
+        // Gate forceRefresh behind DEBUG_TOKEN just like the main `search`
+        // procedure. Without this gate, any unauthenticated client could
+        // drain paid Google Places / Foursquare / HERE quota via this
+        // legacy endpoint by flipping forceRefresh:true on every request.
+        let forceRefresh = false;
+        if (input.forceRefresh) {
+          try {
+            requireAdminAuth(ctx);
+            forceRefresh = true;
+          } catch {
+            console.warn("[Router] searchByZip forceRefresh denied — missing/invalid bearer");
+          }
+        }
+
         if (db) {
           try { await initCacheTables(db); } catch (e) { /* ignore */ }
         }
-        
-        const cacheKey = `${zipCode}:US`;
-        
-        if (db && !input.forceRefresh) {
+
+        // Match the main search cache key shape — include radius so two
+        // users searching the same ZIP at different radii don't collide.
+        const cacheKey = `${zipCode}:US:${input.radius}miles`;
+
+        if (db && !forceRefresh) {
           const isCached = await isPostalCodeCached(db, cacheKey);
           if (isCached) {
             let cached = await getCachedRestaurants(db, cacheKey);

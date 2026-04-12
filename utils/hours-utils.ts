@@ -34,13 +34,21 @@ export function isRestaurantOpenNow(hours?: HoursOfOperation): boolean {
     const timeRangeMatch = todayHours.match(
       /(\d{1,2}):?(\d{2})?\s*(am|pm)?\s*[-–to]+\s*(\d{1,2}):?(\d{2})?\s*(am|pm)?/i
     );
-    
+
     if (!timeRangeMatch) return true; // Can't parse, assume open
-    
+
     const [, openHour, openMin = "00", openAmPm, closeHour, closeMin = "00", closeAmPm] = timeRangeMatch;
-    
-    const openTime = parseTime(parseInt(openHour), parseInt(openMin), openAmPm);
-    let closeTime = parseTime(parseInt(closeHour), parseInt(closeMin), closeAmPm || openAmPm);
+
+    // Detect 24-hour format: if neither side has am/pm AND any hour exceeds
+    // 12, the string must be 24h and the old "hour ≤ 6 → add 12" heuristic
+    // would wrongly push a 6am opening to 6pm. Skip the heuristic in that case.
+    const noAmPm = !openAmPm && !closeAmPm;
+    const openH = parseInt(openHour);
+    const closeH = parseInt(closeHour);
+    const is24h = noAmPm && (openH > 12 || closeH > 12 || openH === 0 || closeH === 0);
+
+    const openTime = parseTime(openH, parseInt(openMin), openAmPm, is24h);
+    let closeTime = parseTime(closeH, parseInt(closeMin), closeAmPm || openAmPm, is24h);
     
     // Handle overnight hours (e.g., 11am - 2am)
     if (closeTime <= openTime) {
@@ -69,21 +77,28 @@ export function isRestaurantOpenNow(hours?: HoursOfOperation): boolean {
 export const isOpenNow = isRestaurantOpenNow;
 
 /**
- * Parse time to minutes from midnight
+ * Parse time to minutes from midnight.
+ *
+ * `is24h` is set by the caller when the pair is unambiguously 24-hour
+ * (neither side has am/pm, and one side has an hour >12 or 0). In that
+ * case we treat the hour literally and never add 12. The old code used
+ * to add 12 whenever hour ≤ 6 with no am/pm, which turned a European
+ * "06:00 - 14:00" breakfast spot into "18:00 - 02:00".
  */
-function parseTime(hour: number, minutes: number, amPm?: string): number {
+function parseTime(hour: number, minutes: number, amPm?: string, is24h = false): number {
   let h = hour;
-  
+
   if (amPm) {
     const isPm = amPm.toLowerCase() === "pm";
     if (isPm && h !== 12) h += 12;
     if (!isPm && h === 12) h = 0;
-  } else {
-    // 24-hour format - if hour > 12, it's already correct
-    // if hour <= 12, we need context (assume PM for evening hours)
-    if (h <= 6) h += 12; // 1-6 probably means 1pm-6pm
+  } else if (!is24h) {
+    // Ambiguous: hour > 12 is already correct. Only fall back to the old
+    // "1-6 probably means 1pm-6pm" heuristic when we have NO evidence that
+    // the string is 24h (i.e. both hours are ≤ 12 and neither is 0).
+    if (h <= 6) h += 12;
   }
-  
+
   return h * 60 + minutes;
 }
 
