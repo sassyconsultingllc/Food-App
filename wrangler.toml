@@ -1,6 +1,6 @@
 name = "foodie-finder-api"
 main = "worker/index.ts"
-compatibility_date = "2024-12-01"
+compatibility_date = "2025-11-01"
 compatibility_flags = ["nodejs_compat"]
 account_id = "d5ccd0d80780f2d0ab72ab12b15244e2"
 

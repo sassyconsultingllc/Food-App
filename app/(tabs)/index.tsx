@@ -119,6 +119,17 @@ export default function HomeScreen() {
   const [locationName, setLocationName] = useState<string | null>(null);
   const [filters, setFilters] = useState<SpinnerFilters>(DEFAULT_FILTERS);
   const [showCelebration, setShowCelebration] = useState(false);
+  // Track the celebration timer so we can clear it on unmount and avoid
+  // calling setState on a dead component.
+  const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (celebrationTimerRef.current) {
+        clearTimeout(celebrationTimerRef.current);
+        celebrationTimerRef.current = null;
+      }
+    };
+  }, []);
   const [showProfileModal, setShowProfileModal] = useState(false);
 
   // React to GPS updates — only seeds the search if no saved preference zip exists
@@ -237,9 +248,14 @@ export default function HomeScreen() {
     setIsSpinning(false);
     setHasSpun(true);
 
-    // Trigger celebration!
+    // Trigger celebration! Track the timer so it can be cancelled on
+    // unmount before fire (e.g. tab-switch mid-celebration).
     setShowCelebration(true);
-    setTimeout(() => setShowCelebration(false), 3000);
+    if (celebrationTimerRef.current) clearTimeout(celebrationTimerRef.current);
+    celebrationTimerRef.current = setTimeout(() => {
+      celebrationTimerRef.current = null;
+      setShowCelebration(false);
+    }, 3000);
 
     // Add to history
     addToHistory(restaurant.id, restaurant.name);

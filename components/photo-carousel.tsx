@@ -77,24 +77,41 @@ export function PhotoCarousel({ photos, restaurantName }: PhotoCarouselProps) {
     );
   }
 
+  // A short stable key so FlatList recycles image views instead of
+  // accumulating new native textures on every scroll.
   const renderPhoto = ({ item, index }: { item: string; index: number }) => (
-    <Pressable onPress={() => openFullscreen(index)}>
+    <Pressable
+      onPress={() => openFullscreen(index)}
+      accessibilityRole="imagebutton"
+      accessibilityLabel={`Photo ${index + 1} of ${photos.length}. Tap to enlarge.`}
+    >
       <Image
         source={{ uri: item }}
         style={styles.photo}
         contentFit="cover"
         transition={200}
+        recyclingKey={item}
+        cachePolicy="memory-disk"
+        accessibilityLabel={`Photo ${index + 1}`}
+        onError={() => {
+          // Broken image URL (expired Google photo reference, etc.) — log
+          // at most once per url. expo-image's fallback is a blank box.
+          console.warn("[PhotoCarousel] image load failed", item);
+        }}
       />
     </Pressable>
   );
 
-  const renderFullscreenPhoto = ({ item }: { item: string }) => (
+  const renderFullscreenPhoto = ({ item, index }: { item: string; index: number }) => (
     <View style={styles.fullscreenPhotoContainer}>
       <Image
         source={{ uri: item }}
         style={styles.fullscreenPhoto}
         contentFit="contain"
         transition={200}
+        recyclingKey={item}
+        cachePolicy="memory-disk"
+        accessibilityLabel={`Photo ${index + 1} of ${photos.length}`}
       />
     </View>
   );

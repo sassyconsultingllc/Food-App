@@ -7,7 +7,7 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useCallback, useEffect, useState, useMemo, useRef } from "react";
-import { Alert, InteractionManager } from "react-native";
+import { Alert, AppState, InteractionManager } from "react-native";
 
 import { calculateDistance } from "@/utils/geo-utils";
 import {
@@ -176,6 +176,12 @@ export function useRestaurantStorage() {
 
   // Load cached restaurants on mount (for offline/fast startup).
   // One multiGet instead of two sequential getItem calls.
+  //
+  // Race guard: the effect has [] deps so the `restaurants` closure is
+  // frozen at mount — checking `restaurants.length === 0` in there was
+  // always true and could clobber a fresh server response that committed
+  // just before the cache read resolved. We now use a functional setState
+  // so we only replace when state is still empty at commit time.
   useEffect(() => {
     const loadCachedRestaurants = async () => {
       try {
@@ -188,9 +194,7 @@ export function useRestaurantStorage() {
           const cacheAge = Date.now() - parseInt(timestamp, 10);
           if (cacheAge < CACHE_DURATION_MS) {
             const parsed = JSON.parse(cached);
-            if (restaurants.length === 0) {
-              setRestaurants(parsed);
-            }
+            setRestaurants((prev) => (prev.length === 0 ? parsed : prev));
           }
         }
       } catch (error) {
@@ -371,7 +375,13 @@ export function useRestaurantStorage() {
       address: serverRestaurant.address || '',
       city: serverRestaurant.city || '',
       state: serverRestaurant.state || '',
-      zipCode: serverRestaurant.zipCode || '',
+      // postalCode is the canonical international field; zipCode kept as
+      // legacy alias. Pull from whichever the server populated — previously
+      // only zipCode was copied, which dropped all non-US postal data.
+      postalCode: serverRestaurant.postalCode || serverRestaurant.zipCode || '',
+      zipCode: serverRestaurant.zipCode || serverRestaurant.postalCode || '',
+      country: serverRestaurant.country,
+      countryCode: serverRestaurant.countryCode,
       latitude: serverRestaurant.latitude || 0,
       longitude: serverRestaurant.longitude || 0,
       phone: serverRestaurant.phone,
@@ -677,18 +687,34 @@ export function useRestaurantStorage() {
     [flushNotes]
   );
 
-  // Flush any pending notes write when the hook unmounts (e.g. app background).
+  // Flush any pending notes write when the hook unmounts AND whenever
+  // the app leaves the foreground. The debounce window is 400ms, so a
+  // force-kill during active typing would otherwise lose up to 400ms of
+  // keystrokes — listening to AppState closes that window for the common
+  // case of the user backgrounding mid-note.
   useEffect(() => {
-    return () => {
-      if (notesPersistTimerRef.current) {
-        clearTimeout(notesPersistTimerRef.current);
-        // Best-effort synchronous flush — AsyncStorage is async so we can't
-        // truly block, but fire-and-forget is better than dropping the write.
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state !== "active") {
+        if (notesPersistTimerRef.current) {
+          clearTimeout(notesPersistTimerRef.current);
+          notesPersistTimerRef.current = null;
+        }
         AsyncStorage.setItem(
           STORAGE_KEYS.PERSONAL_NOTES,
           JSON.stringify(latestNotesRef.current)
         ).catch(() => {});
       }
+    });
+    return () => {
+      sub.remove();
+      if (notesPersistTimerRef.current) {
+        clearTimeout(notesPersistTimerRef.current);
+        notesPersistTimerRef.current = null;
+      }
+      AsyncStorage.setItem(
+        STORAGE_KEYS.PERSONAL_NOTES,
+        JSON.stringify(latestNotesRef.current)
+      ).catch(() => {});
     };
   }, []);
 

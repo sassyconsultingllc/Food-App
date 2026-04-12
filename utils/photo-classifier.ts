@@ -18,6 +18,12 @@ import { getApiBaseUrl } from "@/constants/oauth";
 // made with looser rules get re-evaluated.
 const CACHE_KEY = "photo_classification_v3";
 const BATCH_SIZE = 16; // Keep batches bounded so the worker stays fast
+// Hard cap the classification cache so it can't grow forever — Google
+// photo URLs are all unique (they embed ?key=...&photoreference=...),
+// and without a bound the AsyncStorage blob balloons over months of use.
+// On overflow we drop the oldest keys (insertion order = approximate LRU
+// because loadCache rebuilds from the stored record order).
+const MAX_CACHE_ENTRIES = 2000;
 
 type Classification = "menu" | "food" | "unknown";
 type ClassificationMap = Record<string, Classification>;
@@ -36,6 +42,13 @@ async function loadCache(): Promise<ClassificationMap> {
 }
 
 async function saveCache(cache: ClassificationMap) {
+  // Evict oldest entries if we exceed the cap. Object key order in JS is
+  // insertion order for string keys, so we slice off the front.
+  const keys = Object.keys(cache);
+  if (keys.length > MAX_CACHE_ENTRIES) {
+    const toDrop = keys.length - MAX_CACHE_ENTRIES;
+    for (let i = 0; i < toDrop; i++) delete cache[keys[i]];
+  }
   memoryCache = cache;
   try {
     await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cache));

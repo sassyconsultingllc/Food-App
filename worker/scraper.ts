@@ -75,8 +75,101 @@ interface ScrapeOptions {
   googleKey: string;
 }
 
-// In-memory geocode cache for the worker
+// In-memory geocode cache for the worker. Bounded LRU so a long-running
+// isolate can't grow the Map without bound — every unique postal+country
+// pair used to stay forever. Insertion order = LRU; on overflow we drop
+// the oldest key.
+const GEOCODE_CACHE_MAX = 500;
 const geocodeCache = new Map<string, GeoCoords>();
+function geocodeCacheSet(key: string, value: GeoCoords) {
+  // Refresh LRU position on re-set
+  if (geocodeCache.has(key)) geocodeCache.delete(key);
+  geocodeCache.set(key, value);
+  while (geocodeCache.size > GEOCODE_CACHE_MAX) {
+    const oldest = geocodeCache.keys().next().value;
+    if (oldest === undefined) break;
+    geocodeCache.delete(oldest);
+  }
+}
+function geocodeCacheGet(key: string): GeoCoords | undefined {
+  const v = geocodeCache.get(key);
+  if (v !== undefined) {
+    // LRU touch
+    geocodeCache.delete(key);
+    geocodeCache.set(key, v);
+  }
+  return v;
+}
+
+/**
+ * Map short day-name prefixes (as returned by HERE and Google weekday_text)
+ * to the full lowercase day keys the client UI expects (hours.monday, etc).
+ * Previously HERE hours were written with short keys like "mon" and the UI
+ * silently dropped every one of them.
+ */
+const DAY_KEY_MAP: Record<string, string> = {
+  mon: "monday", monday: "monday",
+  tue: "tuesday", tues: "tuesday", tuesday: "tuesday",
+  wed: "wednesday", weds: "wednesday", wednesday: "wednesday",
+  thu: "thursday", thur: "thursday", thurs: "thursday", thursday: "thursday",
+  fri: "friday", friday: "friday",
+  sat: "saturday", saturday: "saturday",
+  sun: "sunday", sunday: "sunday",
+};
+
+function parseHereHours(openingHours: any): Record<string, string> | undefined {
+  if (!openingHours) return undefined;
+  const text = Array.isArray(openingHours) ? openingHours[0]?.text : openingHours.text;
+  if (!Array.isArray(text)) return undefined;
+  const out: Record<string, string> = {};
+  for (const line of text) {
+    const m = typeof line === "string" && line.match(/^(\w+):\s*(.+)$/);
+    if (m) {
+      const key = DAY_KEY_MAP[m[1].toLowerCase()];
+      if (key) out[key] = m[2];
+    }
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function parseFoursquareHours(h: any): Record<string, string> | undefined {
+  // FSQ v3 `hours.display` is a localized string; `regular` is an array of
+  // { day: 1..7, open: "HHmm", close: "HHmm" }. Day 1 = Sunday per FSQ docs.
+  const regular = h?.regular;
+  if (!Array.isArray(regular) || regular.length === 0) return undefined;
+  const dayByIndex = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  const out: Record<string, string> = {};
+  for (const entry of regular) {
+    if (!entry || typeof entry.day !== "number") continue;
+    const key = dayByIndex[entry.day - 1];
+    if (!key) continue;
+    const open = formatHHmm(entry.open);
+    const close = formatHHmm(entry.close);
+    if (open && close) {
+      out[key] = out[key] ? `${out[key]}, ${open} - ${close}` : `${open} - ${close}`;
+    }
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function formatHHmm(s: unknown): string | undefined {
+  if (typeof s !== "string" || s.length !== 4) return undefined;
+  return `${s.slice(0, 2)}:${s.slice(2)}`;
+}
+
+function parseGoogleWeekdayText(arr: any): Record<string, string> | undefined {
+  // Google Place Details weekday_text is ["Monday: 11:00 AM – 10:00 PM", ...]
+  if (!Array.isArray(arr) || arr.length === 0) return undefined;
+  const out: Record<string, string> = {};
+  for (const line of arr) {
+    const m = typeof line === "string" && line.match(/^(\w+):\s*(.+)$/);
+    if (m) {
+      const key = DAY_KEY_MAP[m[1].toLowerCase()];
+      if (key) out[key] = m[2];
+    }
+  }
+  return Object.keys(out).length ? out : undefined;
+}
 
 /**
  * Fetch with a hard timeout so a hung upstream (Nominatim, Google, HERE,
@@ -104,9 +197,8 @@ async function fetchWithTimeout(
 export async function getCoords(postalCode: string, countryCode?: string): Promise<GeoCoords> {
   const cacheKey = countryCode ? `${postalCode}:${countryCode}` : postalCode;
   
-  if (geocodeCache.has(cacheKey)) {
-    return geocodeCache.get(cacheKey)!;
-  }
+  const hit = geocodeCacheGet(cacheKey);
+  if (hit) return hit;
   
   try {
     // If caller didn't provide a countryCode and the postal code looks like a
@@ -155,7 +247,7 @@ export async function getCoords(postalCode: string, countryCode?: string): Promi
         state: address.state || address.province || address.region,
       };
 
-      geocodeCache.set(cacheKey, coords);
+      geocodeCacheSet(cacheKey, coords);
       return coords;
     }
   } catch (e) {
@@ -222,6 +314,7 @@ async function fetchFoursquare(
       cuisineType: p.categories?.[0]?.name || 'Restaurant',
       categories: p.categories?.map((c: any) => c.name) || [],
       photos: p.photos?.map((ph: any) => `${ph.prefix}original${ph.suffix}`) || [],
+      hours: parseFoursquareHours(p.hours),
       sources: ['foursquare'],
     }));
   } catch (e) {
@@ -273,6 +366,7 @@ async function fetchHERE(
       categories: p.categories?.map((c: any) => c.name) || [],
       // HERE provides distance in meters - convert to result
       distance: p.distance ? p.distance / 1609.34 : undefined, // Convert to miles
+      hours: parseHereHours(p.openingHours),
       sources: ['here'],
     }));
   } catch (e) {
@@ -284,9 +378,17 @@ async function fetchHERE(
 async function fetchGooglePlaceDetails(
   placeId: string,
   apiKey: string
-): Promise<{ photos: string[]; website?: string; phone?: string; menuUrl?: string } | null> {
+): Promise<{
+  photos: string[];
+  website?: string;
+  phone?: string;
+  menuUrl?: string;
+  hours?: Record<string, string>;
+} | null> {
   try {
-    const fields = 'photos,website,formatted_phone_number,url';
+    // opening_hours added so the "open now" badge actually works — previously
+    // the worker never requested hours and every restaurant showed "Hours unknown".
+    const fields = 'photos,website,formatted_phone_number,url,opening_hours';
     const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=${fields}&key=${apiKey}`;
     const res = await fetchWithTimeout(url);
     if (!res.ok) return null;
@@ -299,7 +401,8 @@ async function fetchGooglePlaceDetails(
     const website = d.website || '';
     // Use restaurant website as menu link (most have a menu page)
     const menuUrl = website || undefined;
-    return { photos, website, phone: d.formatted_phone_number, menuUrl };
+    const hours = parseGoogleWeekdayText(d.opening_hours?.weekday_text);
+    return { photos, website, phone: d.formatted_phone_number, menuUrl, hours };
   } catch {
     return null;
   }
@@ -331,14 +434,20 @@ async function fetchGoogle(
     // the full gallery). CLAUDE.md §Bug 1 explicitly calls out managing API
     // costs for this enrichment.
     const ENRICHMENT_CAP = 20;
-    const detailResults = await Promise.all(
+    // Promise.allSettled so a single detail-call timeout doesn't collapse
+    // the entire Google result set — previously one 8s timeout kills the
+    // whole search via the outer try/catch.
+    const detailResults = await Promise.allSettled(
       places.slice(0, ENRICHMENT_CAP).map((p: any) =>
         p.place_id ? fetchGooglePlaceDetails(p.place_id, apiKey) : Promise.resolve(null)
       )
     );
+    const resolvedDetails = detailResults.map((r) =>
+      r.status === "fulfilled" ? r.value : null
+    );
 
     return places.map((p: any, i: number) => {
-      const details = i < ENRICHMENT_CAP ? detailResults[i] : null;
+      const details = i < ENRICHMENT_CAP ? resolvedDetails[i] : null;
       const searchPhoto = p.photos?.[0]
         ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${p.photos[0].photo_reference}&key=${apiKey}`
         : undefined;
@@ -369,6 +478,7 @@ async function fetchGoogle(
         website: details?.website,
         phone: details?.phone,
         menuUrl: details?.menuUrl,
+        hours: details?.hours,
         sources: ['google'],
       };
     });
@@ -579,6 +689,7 @@ function mergeRestaurants(all: Partial<ScrapedRestaurant>[]): ScrapedRestaurant[
       cuisineType: primary.cuisineType || 'Restaurant',
       categories: allCategories,
       photos: allPhotos.slice(0, 20),
+      hours: records.find(r => r.hours && Object.keys(r.hours).length > 0)?.hours,
       menuUrl: records.find(r => r.menuUrl)?.menuUrl,
       reviewSummary,
       sentiment,

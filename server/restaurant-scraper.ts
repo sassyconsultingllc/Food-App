@@ -346,21 +346,43 @@ async function fetchFromHERE(
   }
 }
 
+// HERE's openingHours.text returns day prefixes like "Mon: 11:00 - 22:00".
+// The UI reads hours.monday / hours.tuesday etc., so we normalize short
+// day keys to full lowercase names. Previously short keys were written
+// verbatim, and the UI silently dropped every HERE-sourced hours record.
+const HERE_DAY_KEY_MAP: Record<string, string> = {
+  mon: "monday",
+  tue: "tuesday",
+  wed: "wednesday",
+  thu: "thursday",
+  fri: "friday",
+  sat: "saturday",
+  sun: "sunday",
+  monday: "monday",
+  tuesday: "tuesday",
+  wednesday: "wednesday",
+  thursday: "thursday",
+  friday: "friday",
+  saturday: "saturday",
+  sunday: "sunday",
+};
+
 function parseHEREHours(openingHours: any): Record<string, string> | undefined {
   if (!openingHours?.text) return undefined;
-  
+
   const hours: Record<string, string> = {};
   const lines = openingHours.text;
-  
+
   if (Array.isArray(lines)) {
     lines.forEach((line: string) => {
       const match = line.match(/^(\w+):\s*(.+)$/);
       if (match) {
-        hours[match[1].toLowerCase()] = match[2];
+        const normalized = HERE_DAY_KEY_MAP[match[1].toLowerCase()];
+        if (normalized) hours[normalized] = match[2];
       }
     });
   }
-  
+
   return Object.keys(hours).length > 0 ? hours : undefined;
 }
 

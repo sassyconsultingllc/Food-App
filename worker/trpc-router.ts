@@ -115,7 +115,11 @@ export const appRouter = router({
           }
         }
 
-        const cacheKey = countryCode ? `${postalCode}:${countryCode}` : postalCode;
+        // Cache key includes radius + unit so a user searching the same
+        // ZIP at a wider radius doesn't get served an older, narrower cache.
+        // Previously "${zip}:${cc}" collided across radii and returned
+        // stale/undersized result sets to anyone who bumped their radius.
+        const cacheKey = `${postalCode}:${countryCode || ""}:${radius}${radiusUnit}`;
 
         if (db) {
           try {
@@ -145,13 +149,13 @@ export const appRouter = router({
         
         console.log(`[Router] Cache miss for ${cacheKey}, fetching from APIs`);
         
-        // If no countryCode provided and postal code looks like a US 5-digit ZIP,
-        // prefer US geocoding to avoid ambiguous international postal codes
-        let effectiveCountryCode = countryCode;
-        const looksLikeUSZip = /^[0-9]{5}$/.test(postalCode);
-        if (!effectiveCountryCode && looksLikeUSZip) {
-          effectiveCountryCode = 'US';
-        }
+        // Do NOT auto-guess US from a 5-digit postal code — that collides
+        // with Berlin (10115), Paris (75001), Rome (00184), Istanbul (34000),
+        // Mexico City (06000), and many other non-US postal codes, and ships
+        // users to Brooklyn when they meant Europe. If the caller didn't
+        // supply countryCode, leave it unset and let Nominatim pick the best
+        // global match.
+        const effectiveCountryCode = countryCode;
         
         let restaurants = await scrapeRestaurants({
           postalCode,
@@ -164,25 +168,12 @@ export const appRouter = router({
           googleKey: env.GOOGLE_PLACES_API_KEY || "",
         });
         
-        // If we guessed US but results appear entirely from another country,
-        // retry explicitly forcing US geocoding to prefer local matches.
-        if (looksLikeUSZip && !countryCode) {
-          const nonUS = restaurants.filter(r => r.countryCode && r.countryCode !== 'US');
-          const anyUS = restaurants.some(r => r.countryCode === 'US');
-          if (restaurants.length > 0 && !anyUS && nonUS.length === restaurants.length) {
-            console.log('[Router] Results appear non-US; retrying scrape with explicit US country code');
-            restaurants = await scrapeRestaurants({
-              postalCode,
-              countryCode: 'US',
-              radius,
-              radiusUnit,
-              limit: Math.max(limit, 50),
-              foursquareKey: env.FOURSQUARE_API_KEY || "",
-              hereKey: env.HERE_API_KEY || "",
-              googleKey: env.GOOGLE_PLACES_API_KEY || "",
-            });
-          }
-        }
+        // Previously: if the postal code looked like a US ZIP (5 digits)
+        // and no country was specified, we'd re-run the scrape forcing US.
+        // Removed because 5-digit codes are common worldwide (Berlin 10115,
+        // Paris 75001, Istanbul 34000, Mexico City 06000) and the forced
+        // retry shipped users to the wrong continent. If the caller wants
+        // US, they must pass countryCode: 'US' explicitly.
 
         // If we have an effective country code, prefer restaurants from that country
         if (effectiveCountryCode) {
@@ -833,7 +824,12 @@ export const appRouter = router({
         }
         existing.push(note);
 
-        await kv.put(key, JSON.stringify(existing));
+        // 180-day TTL so truly stale conversations age out of KV instead
+        // of accumulating forever. Each fresh note extends the TTL via
+        // rewrite, so active restaurants keep their notes indefinitely.
+        await kv.put(key, JSON.stringify(existing), {
+          expirationTtl: 60 * 60 * 24 * 180,
+        });
 
         return { success: true, note, deduped: false };
       }),

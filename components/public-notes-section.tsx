@@ -70,7 +70,19 @@ export function PublicNotesSection({ restaurantId, restaurantName }: PublicNotes
       notesQuery.refetch();
     },
     onError: (err) => {
-      Alert.alert("Error", err.message || "Failed to post note");
+      // Map tRPC error codes to friendly text so the user never sees a
+      // raw "TRPCClientError: ..." in production.
+      const code = (err as any)?.data?.code as string | undefined;
+      let msg = "Couldn't post your note. Please try again.";
+      if (code === "BAD_REQUEST") {
+        // Content guard rejected — the server's reason is user-safe.
+        msg = err.message || "Your note couldn't be posted.";
+      } else if (code === "TOO_MANY_REQUESTS") {
+        msg = "You've posted a lot of notes recently. Please wait a bit and try again.";
+      } else if (code === "SERVICE_UNAVAILABLE" || code === "INTERNAL_SERVER_ERROR") {
+        msg = "Public notes are temporarily unavailable. Please try again later.";
+      }
+      Alert.alert("Couldn't post note", msg);
     },
   });
 

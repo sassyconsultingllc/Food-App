@@ -7,7 +7,7 @@
  */
 
 import { useAudioPlayer } from "expo-audio";
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 // Static requires so Metro bundles them
 const SOUNDS = {
@@ -51,6 +51,23 @@ export function useAppSounds(soundEnabled: boolean) {
     },
     [soundEnabled],
   );
+
+  // Release every audio player on unmount so the native buffers are freed.
+  // Without this, each mount of a screen that uses the hook accumulates
+  // up to 5 audio buffers that never get GC'd.
+  useEffect(() => {
+    const map = playersRef.current;
+    return () => {
+      map.forEach((player) => {
+        try {
+          (player as any).remove?.();
+        } catch {
+          // best effort — expo-audio will clean up when the JS ref is GC'd
+        }
+      });
+      map.clear();
+    };
+  }, []);
 
   return { playSound };
 }

@@ -7,7 +7,7 @@
  * a winner. Large text, 3-D perspective for the older crowd.
  */
 
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { View, StyleSheet, Pressable, useWindowDimensions } from "react-native";
 import Animated, {
   useSharedValue,
@@ -79,6 +79,19 @@ export function SpinnerWheel({
 
   const scrollY = useSharedValue(0);
   const glowOpacity = useSharedValue(0);
+  // Track the recursive haptic timer so we can cancel it if the user
+  // navigates away mid-spin. Previously setTimeout fired for the full
+  // 4-second tick loop even after the component unmounted, which
+  // triggered Haptics on a dead node and could setState-after-unmount.
+  const tickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (tickTimerRef.current) {
+        clearTimeout(tickTimerRef.current);
+        tickTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // Build a long repeating reel so the scroll can wrap around
   const displayRestaurants = useMemo(
@@ -141,14 +154,17 @@ export function SpinnerWheel({
       },
     );
 
-    // Tick haptics during spin
+    // Tick haptics during spin. Store the timer so the unmount effect
+    // can cancel the tail end.
     let tickCount = 0;
     const maxTicks = 40;
     const tickHaptic = () => {
       if (tickCount < maxTicks) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         tickCount++;
-        setTimeout(tickHaptic, 90 + tickCount * 2);
+        tickTimerRef.current = setTimeout(tickHaptic, 90 + tickCount * 2);
+      } else {
+        tickTimerRef.current = null;
       }
     };
     tickHaptic();

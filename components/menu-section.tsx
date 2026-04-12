@@ -162,8 +162,23 @@ export function MenuSection({
       });
 
       if (!res.ok) {
-        const err = await res.text().catch(() => "Upload failed");
-        throw new Error(err || `Upload failed (${res.status})`);
+        // Don't bleed server HTML / stack traces / CF error pages into
+        // the user-facing Alert. Map by status class instead.
+        let friendly: string;
+        if (res.status === 429) {
+          friendly = "You're uploading too fast. Please wait a moment and try again.";
+        } else if (res.status === 413) {
+          friendly = "That photo is too large to upload.";
+        } else if (res.status === 415) {
+          friendly = "That file format isn't supported. Please use a JPEG or PNG.";
+        } else if (res.status >= 500) {
+          friendly = "Menu uploads are temporarily unavailable. Please try again later.";
+        } else {
+          friendly = "Couldn't upload the photo. Please try again.";
+        }
+        // Surface status for logs only — never the raw body.
+        console.warn("[menu-upload] failed", res.status);
+        throw new Error(friendly);
       }
 
       const data = await res.json() as { ok?: boolean; uploaded?: string[]; error?: string };

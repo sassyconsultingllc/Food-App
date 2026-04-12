@@ -175,6 +175,9 @@ export default function RestaurantDetailScreen() {
         {/* Back Button */}
         <Pressable
           onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          hitSlop={8}
           style={[styles.headerButton, styles.backHeaderButton, { top: insets.top + 8 }]}
         >
           <IconSymbol name="chevron.left" size={24} color={AppColors.charcoal} />
@@ -183,6 +186,9 @@ export default function RestaurantDetailScreen() {
         {/* Share Button */}
         <Pressable
           onPress={handleSharePress}
+          accessibilityRole="button"
+          accessibilityLabel="Share this restaurant"
+          hitSlop={8}
           style={[styles.headerButton, styles.shareHeaderButton, { top: insets.top + 8 }]}
         >
           <IconSymbol name="square.and.arrow.up" size={22} color={AppColors.charcoal} />
@@ -191,6 +197,10 @@ export default function RestaurantDetailScreen() {
         {/* Favorite Button */}
         <Pressable
           onPress={handleFavoritePress}
+          accessibilityRole="button"
+          accessibilityLabel={favorite ? "Remove from favorites" : "Add to favorites"}
+          accessibilityState={{ selected: favorite }}
+          hitSlop={8}
           style={[styles.headerButton, styles.favoriteHeaderButton, { top: insets.top + 8 }]}
         >
           <IconSymbol
