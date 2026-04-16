@@ -44,16 +44,23 @@ export function useSoundSettings() {
     loadSettings();
   }, []);
 
-  // Save settings
+  // Save settings. Functional setState so rapid toggles (sound then
+  // haptics) don't clobber each other via a stale `settings` closure.
   const updateSettings = useCallback(async (newSettings: Partial<SoundSettings>) => {
     try {
-      const updated = { ...settings, ...newSettings };
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      setSettings(updated);
+      let persisted: SoundSettings | null = null;
+      setSettings((prev) => {
+        const next = { ...prev, ...newSettings };
+        persisted = next;
+        return next;
+      });
+      if (persisted) {
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
+      }
     } catch (error) {
       console.error("Error saving sound settings:", error);
     }
-  }, [settings]);
+  }, []);
 
   // Toggle sound
   const toggleSound = useCallback(() => {

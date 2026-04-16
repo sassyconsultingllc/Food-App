@@ -4,7 +4,7 @@
  */
 
 import * as Haptics from "expo-haptics";
-import React, { useState, useMemo, useCallback, useEffect } from "react";
+import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -100,6 +100,8 @@ export default function BrowseScreen() {
     getRestaurantsWithDistance,
     toggleFavorite,
     isFavorite,
+    searchWithNewParams,
+    loading: restaurantsLoading,
   } = useRestaurantStorage();
 
   // Build taste profile from favorites so we can flag matching cards below.
@@ -123,6 +125,19 @@ export default function BrowseScreen() {
   const [activeDietaryFilters, setActiveDietaryFilters] = useState<DietaryOption[]>([]);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const zipCode = preferences.defaultZipCode || preferences.defaultPostalCode || "";
+  const defaultRadius = preferences.defaultRadius || 10;
+
+  // Auto-trigger the scraper when Browse opens and no restaurants are loaded.
+  // This covers the case where the user goes straight to Browse without
+  // searching a ZIP on the home tab first. The scraper result is cached, so
+  // this is essentially free after the first call for a given ZIP+radius.
+  const scrapeTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (!scrapeTriggeredRef.current && zipCode && allRestaurants.length === 0) {
+      scrapeTriggeredRef.current = true;
+      searchWithNewParams(zipCode, defaultRadius);
+    }
+  }, [zipCode, defaultRadius, allRestaurants.length, searchWithNewParams]);
 
   // AI Semantic Search
   const { search: aiSearch, results: aiResults, loading: aiLoading, error: aiError, clear: aiClear } = useSemanticSearch();

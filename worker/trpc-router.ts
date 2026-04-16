@@ -309,15 +309,15 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         const { VECTORIZE, AI, DB } = ctx.env;
         
-        if (!VECTORIZE || !AI) {
-          return { 
-            results: [], 
-            error: "Similar search not available - vector index not configured" 
+        if (!VECTORIZE || !AI || !DB) {
+          return {
+            results: [],
+            error: "Similar search not available - vector index not configured"
           };
         }
-        
+
         try {
-          const similarResults = await findSimilar(VECTORIZE, AI, DB!, {
+          const similarResults = await findSimilar(VECTORIZE, AI, DB, {
             restaurantId: input.restaurantId,
             topK: input.topK,
             excludeIds: input.excludeIds,
@@ -550,9 +550,9 @@ export const appRouter = router({
         const env = ctx.env;
         const db = env.DB;
 
-        const cacheKey = input.countryCode
-          ? `${input.postalCode}:${input.countryCode}`
-          : input.postalCode;
+        // Must match the format used by `search` — include radius+unit so
+        // the cache write lands on the key that `search` will actually read.
+        const cacheKey = `${input.postalCode}:${input.countryCode || ""}:${input.radius}${input.radiusUnit}`;
 
         const restaurants = await scrapeRestaurants({
           postalCode: input.postalCode,
@@ -1008,7 +1008,7 @@ export const appRouter = router({
               .slice(0, 10)
               .map(
                 (p: any) =>
-                  `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${p.photo_reference}&key=${googleKey}`
+                  `/api/photo?ref=${encodeURIComponent(p.photo_reference)}&maxwidth=800`
               ),
             sources: ["google-share"],
             scrapedAt: new Date().toISOString(),

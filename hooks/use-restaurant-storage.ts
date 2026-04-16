@@ -420,15 +420,23 @@ export function useRestaurantStorage() {
     };
   }
 
-  // Save preferences to storage
+  // Save preferences to storage. Functional setState so rapid saves
+  // (e.g. toggling two settings in quick succession) don't clobber via
+  // a stale `preferences` closure.
   const savePreferences = useCallback(async (newPrefs: Partial<UserPreferences>) => {
     try {
-      const updated = { ...preferences, ...newPrefs };
-      await retryOperation(() => 
-        AsyncStorage.setItem(STORAGE_KEYS.PREFERENCES, JSON.stringify(updated))
-      );
-      setPreferences(updated);
-      
+      let persisted: UserPreferences | null = null;
+      setPreferences((prev) => {
+        const next = { ...prev, ...newPrefs };
+        persisted = next;
+        return next;
+      });
+      if (persisted) {
+        await retryOperation(() =>
+          AsyncStorage.setItem(STORAGE_KEYS.PREFERENCES, JSON.stringify(persisted))
+        );
+      }
+
       // Clear cache when preferences change so new data is fetched
       if (newPrefs.defaultZipCode || newPrefs.defaultRadius) {
         await AsyncStorage.removeItem(STORAGE_KEYS.CACHED_RESTAURANTS);
@@ -441,7 +449,7 @@ export function useRestaurantStorage() {
         "Unable to save preferences. Please check your device storage and try again."
       );
     }
-  }, [preferences]);
+  }, []);
 
   // Refetch restaurants (manual refresh)
   const refetchRestaurants = useCallback(async () => {

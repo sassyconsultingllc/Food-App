@@ -140,6 +140,23 @@ const config: ExpoConfig = {
         },
       },
     ],
+    [
+      "expo-image-picker",
+      {
+        photosPermission:
+          "Foodie Finder needs photo access so you can upload menu photos for other diners.",
+        cameraPermission:
+          "Foodie Finder needs camera access so you can take menu photos.",
+      },
+    ],
+    [
+      "expo-location",
+      {
+        locationWhenInUsePermission:
+          "Foodie Finder uses your location to find nearby restaurants.",
+      },
+    ],
+    "expo-audio",
   ],
   experiments: {
     typedRoutes: true,
@@ -149,8 +166,8 @@ const config: ExpoConfig = {
     eas: {
       projectId: "fc6c0d91-696b-4c6f-9ee3-a1868c732988",
     },
-    privacyPolicyUrl: process.env.EXPO_PUBLIC_PRIVACY_POLICY_URL || 'https://privacy.sassyconsultingllc.com/foodie-finder',
-    termsOfServiceUrl: process.env.EXPO_PUBLIC_TERMS_URL || 'https://privacy.sassyconsultingllc.com/foodie-finder/terms',
+    privacyPolicyUrl: process.env.EXPO_PUBLIC_PRIVACY_POLICY_URL || 'https://sassyconsultingllc.com/privacy/foodie-finder/',
+    termsOfServiceUrl: process.env.EXPO_PUBLIC_TERMS_URL || 'https://sassyconsultingllc.com/privacy/foodie-finder/terms',
     supportEmail: 'info@sassyconsultingllc.com',
   },
 };

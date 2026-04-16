@@ -144,7 +144,12 @@ app.all('/api/debug/inspect', async (c) => {
   try {
     const method = c.req.method;
     const url = c.req.url;
-    const headers = c.req?.raw?.headers ? Object.fromEntries(c.req.raw.headers.entries()) : (c.req.header() as Record<string, string>);
+    // Filter out the authorization header so the debug token doesn't leak
+    // in the response if someone logs or screenshots it.
+    const rawHeaders = c.req?.raw?.headers
+      ? Object.fromEntries(c.req.raw.headers.entries())
+      : (c.req.header() as Record<string, string>);
+    const { authorization, ...headers } = rawHeaders;
     const requestUrl = c.req?.raw?.url ?? c.req.url ?? '';
     const queryParams = requestUrl ? Object.fromEntries(new URL(requestUrl).searchParams.entries()) : {};
 
@@ -404,6 +409,40 @@ app.post("/api/vision/classify", async (c) => {
     return c.json({ results });
   } catch (err) {
     return c.json({ results, error: String(err) }, 500);
+  }
+});
+
+// =============================================================================
+// Google Places Photo Proxy
+// =============================================================================
+// Proxies Google Places photo requests so the API key never reaches the
+// client. Photo URLs stored in D1/returned to the app use the format
+// `/api/photo?ref=PHOTO_REFERENCE&maxwidth=800` instead of the raw
+// Google endpoint with `?key=...`.
+app.get("/api/photo", async (c) => {
+  const ref = c.req.query("ref");
+  const maxwidth = c.req.query("maxwidth") || "800";
+  if (!ref || ref.length > 2000) {
+    return c.json({ error: "Missing or invalid ref" }, 400);
+  }
+  const apiKey = (c.env as any).GOOGLE_PLACES_API_KEY as string | undefined;
+  if (!apiKey) {
+    return c.json({ error: "Photo service not configured" }, 503);
+  }
+  const url = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=${encodeURIComponent(maxwidth)}&photoreference=${encodeURIComponent(ref)}&key=${apiKey}`;
+  try {
+    const res = await fetch(url, { redirect: "follow" });
+    if (!res.ok) return c.json({ error: "Photo not found" }, 404);
+    // Stream the image bytes through with correct content type
+    const ct = res.headers.get("content-type") || "image/jpeg";
+    return new Response(res.body, {
+      headers: {
+        "content-type": ct,
+        "cache-control": "public, max-age=86400",
+      },
+    });
+  } catch {
+    return c.json({ error: "Photo fetch failed" }, 502);
   }
 });
 

@@ -49,7 +49,7 @@ export function RestaurantCard({
     <Pressable
       onPress={handlePress}
       focusable
-      accessibilityLabel={`${restaurant.name}, ${restaurant.cuisineType}, rated ${restaurant.ratings.aggregated.toFixed(1)} stars${restaurant.distance !== undefined ? `, ${restaurant.distance.toFixed(1)} miles away` : ''}`}
+      accessibilityLabel={`${restaurant.name}, ${restaurant.cuisineType}, rated ${(restaurant.ratings?.aggregated ?? 0).toFixed(1)} stars${restaurant.distance !== undefined ? `, ${restaurant.distance.toFixed(1)} miles away` : ''}`}
       accessibilityRole="button"
       accessibilityHint="Opens restaurant details"
       style={({ pressed }: { pressed: boolean }) => [

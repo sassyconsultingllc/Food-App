@@ -174,7 +174,7 @@ export function PhotoCarousel({ photos, restaurantName }: PhotoCarouselProps) {
             <ThemedText style={styles.fullscreenTitle} numberOfLines={1}>
               {restaurantName || "Photos"}
             </ThemedText>
-            <Pressable onPress={closeFullscreen} style={styles.closeButton}>
+            <Pressable onPress={closeFullscreen} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Close fullscreen view">
               <IconSymbol name="xmark" size={24} color={AppColors.white} />
             </Pressable>
           </View>

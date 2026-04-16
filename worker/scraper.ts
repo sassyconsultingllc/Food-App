@@ -133,11 +133,12 @@ function parseHereHours(openingHours: any): Record<string, string> | undefined {
 }
 
 function parseFoursquareHours(h: any): Record<string, string> | undefined {
-  // FSQ v3 `hours.display` is a localized string; `regular` is an array of
-  // { day: 1..7, open: "HHmm", close: "HHmm" }. Day 1 = Sunday per FSQ docs.
+  // FSQ v3 `hours.regular` is an array of
+  // { day: 1..7, open: "HHmm", close: "HHmm" }.
+  // Per current FSQ v3 docs: day 1 = Monday, 7 = Sunday.
   const regular = h?.regular;
   if (!Array.isArray(regular) || regular.length === 0) return undefined;
-  const dayByIndex = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  const dayByIndex = ["", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
   const out: Record<string, string> = {};
   for (const entry of regular) {
     if (!entry || typeof entry.day !== "number") continue;
@@ -396,7 +397,7 @@ async function fetchGooglePlaceDetails(
     const d = data.result;
     if (!d) return null;
     const photos = (d.photos || []).slice(0, 20).map((p: any) =>
-      `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${p.photo_reference}&key=${apiKey}`
+      `/api/photo?ref=${encodeURIComponent(p.photo_reference)}&maxwidth=800`
     );
     const website = d.website || '';
     // Use restaurant website as menu link (most have a menu page)

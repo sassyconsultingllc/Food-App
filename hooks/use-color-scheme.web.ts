@@ -1,9 +1,9 @@
 /**
  * Color Scheme Hook (Web)
  * © 2025 Sassy Consulting - A Veteran Owned Company
- * 
- * Returns the effective color scheme respecting user's theme preference.
+ *
  * Web-specific version handles hydration for static rendering.
+ * All hooks called unconditionally to satisfy Rules of Hooks.
  */
 
 import { useEffect, useState } from "react";
@@ -12,24 +12,19 @@ import { useTheme } from "@/contexts/theme-context";
 
 export function useColorScheme(): "light" | "dark" {
   const [hasHydrated, setHasHydrated] = useState(false);
+  const systemColorScheme = useSystemColorScheme();
 
   useEffect(() => {
     setHasHydrated(true);
   }, []);
 
-  // Try to use ThemeContext for user preference
+  let effectiveTheme: "light" | "dark" | undefined;
   try {
-    const { effectiveTheme } = useTheme();
-    if (hasHydrated) {
-      return effectiveTheme;
-    }
-    return "light"; // Default during SSR
+    ({ effectiveTheme } = useTheme());
   } catch {
-    // Fallback if used outside ThemeProvider
-    const systemColorScheme = useSystemColorScheme();
-    if (hasHydrated) {
-      return systemColorScheme ?? "light";
-    }
-    return "light";
+    // Outside ThemeProvider
   }
+
+  if (!hasHydrated) return "light";
+  return effectiveTheme ?? systemColorScheme ?? "light";
 }

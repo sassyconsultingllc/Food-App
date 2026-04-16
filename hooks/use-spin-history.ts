@@ -48,18 +48,23 @@ export function useSpinHistory() {
     }
   }, []);
   
-  // Add a spin to history
+  // Add a spin to history. Uses functional setState so two rapid spins
+  // don't clobber each other via a stale `history` closure.
   const addToHistory = useCallback(async (restaurantId: string, restaurantName: string) => {
     const entry: SpinHistoryEntry = {
       restaurantId,
       restaurantName,
       pickedAt: new Date().toISOString(),
     };
-    
-    const newHistory = [entry, ...history].slice(0, MAX_HISTORY);
-    setHistory(newHistory);
-    await saveHistory(newHistory);
-  }, [history, saveHistory]);
+
+    let persisted: SpinHistoryEntry[] = [];
+    setHistory((prev) => {
+      const next = [entry, ...prev].slice(0, MAX_HISTORY);
+      persisted = next;
+      return next;
+    });
+    await saveHistory(persisted);
+  }, [saveHistory]);
   
   // Get IDs of restaurants picked within the last N days
   const getRecentlyPickedIds = useCallback((days: number): string[] => {
