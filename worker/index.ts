@@ -420,6 +420,15 @@ app.post("/api/vision/classify", async (c) => {
 // `/api/photo?ref=PHOTO_REFERENCE&maxwidth=800` instead of the raw
 // Google endpoint with `?key=...`.
 app.get("/api/photo", async (c) => {
+  // Rate-limit per client IP so someone can't hammer this to burn
+  // through Google Places photo quota.
+  const ip = getClientIP(c);
+  const rl = await checkRateLimit(c.env.RATE_LIMIT, `photo:${ip}`, 120, 60);
+  c.header("X-RateLimit-Remaining", String(rl.remaining));
+  if (!rl.allowed) {
+    return c.json({ error: "Rate limit exceeded" }, 429);
+  }
+
   const ref = c.req.query("ref");
   const maxwidth = c.req.query("maxwidth") || "800";
   if (!ref || ref.length > 2000) {
@@ -431,7 +440,7 @@ app.get("/api/photo", async (c) => {
   }
   const url = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=${encodeURIComponent(maxwidth)}&photoreference=${encodeURIComponent(ref)}&key=${apiKey}`;
   try {
-    const res = await fetch(url, { redirect: "follow" });
+    const res = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(8000) });
     if (!res.ok) return c.json({ error: "Photo not found" }, 404);
     // Stream the image bytes through with correct content type
     const ct = res.headers.get("content-type") || "image/jpeg";

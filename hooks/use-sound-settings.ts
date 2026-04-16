@@ -62,20 +62,31 @@ export function useSoundSettings() {
     }
   }, []);
 
-  // Toggle sound
+  // Toggle helpers use functional setState directly so they can't
+  // read a stale `settings` value from their closure.
   const toggleSound = useCallback(() => {
-    updateSettings({ soundEnabled: !settings.soundEnabled });
-  }, [settings.soundEnabled, updateSettings]);
+    setSettings((prev) => {
+      const next = { ...prev, soundEnabled: !prev.soundEnabled };
+      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(console.error);
+      return next;
+    });
+  }, []);
 
-  // Toggle haptics
   const toggleHaptics = useCallback(() => {
-    updateSettings({ hapticsEnabled: !settings.hapticsEnabled });
-  }, [settings.hapticsEnabled, updateSettings]);
+    setSettings((prev) => {
+      const next = { ...prev, hapticsEnabled: !prev.hapticsEnabled };
+      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(console.error);
+      return next;
+    });
+  }, []);
 
-  // Toggle celebration effects
   const toggleCelebration = useCallback(() => {
-    updateSettings({ celebrationEnabled: !settings.celebrationEnabled });
-  }, [settings.celebrationEnabled, updateSettings]);
+    setSettings((prev) => {
+      const next = { ...prev, celebrationEnabled: !prev.celebrationEnabled };
+      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(console.error);
+      return next;
+    });
+  }, []);
 
   // Haptic feedback (respects settings)
   const haptic = useCallback((style: Haptics.ImpactFeedbackStyle = Haptics.ImpactFeedbackStyle.Medium) => {

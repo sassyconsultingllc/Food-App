@@ -18,6 +18,7 @@ import {
   DietaryOption,
 } from "@/types/restaurant";
 import { trpc } from "@/lib/trpc";
+import { getApiBaseUrl } from "@/constants/oauth";
 import { useRestaurantSearchContext } from "@/context/restaurant-search-context";
 
 const STORAGE_KEYS = {
@@ -410,7 +411,15 @@ export function useRestaurantStorage() {
       categories,
       dietaryOptions,
       description: serverRestaurant.reviewSummary,
-      photos: Array.from(new Set<string>(serverRestaurant.photos || [])),
+      // Resolve relative photo proxy URLs (/api/photo?ref=...) to full
+      // URLs so expo-image can fetch them on native. Relative paths work
+      // in browsers but silently fail in React Native.
+      photos: Array.from(new Set<string>(
+        (serverRestaurant.photos || []).map((p: string) => {
+          if (p.startsWith("/")) return `${getApiBaseUrl()}${p}`;
+          return p;
+        })
+      )),
       menu: serverRestaurant.menu || (serverRestaurant.menuUrl ? { url: serverRestaurant.menuUrl } : undefined),
       sentiment: serverRestaurant.sentiment,
       reviewSummary: serverRestaurant.reviewSummary,

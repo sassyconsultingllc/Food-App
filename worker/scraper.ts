@@ -138,11 +138,12 @@ function parseFoursquareHours(h: any): Record<string, string> | undefined {
   // Per current FSQ v3 docs: day 1 = Monday, 7 = Sunday.
   const regular = h?.regular;
   if (!Array.isArray(regular) || regular.length === 0) return undefined;
+  // FSQ v3: day 1=Monday, 2=Tuesday, ..., 7=Sunday. Index directly.
   const dayByIndex = ["", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
   const out: Record<string, string> = {};
   for (const entry of regular) {
     if (!entry || typeof entry.day !== "number") continue;
-    const key = dayByIndex[entry.day - 1];
+    const key = dayByIndex[entry.day];
     if (!key) continue;
     const open = formatHHmm(entry.open);
     const close = formatHHmm(entry.close);
@@ -450,7 +451,7 @@ async function fetchGoogle(
     return places.map((p: any, i: number) => {
       const details = i < ENRICHMENT_CAP ? resolvedDetails[i] : null;
       const searchPhoto = p.photos?.[0]
-        ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${p.photos[0].photo_reference}&key=${apiKey}`
+        ? `/api/photo?ref=${encodeURIComponent(p.photos[0].photo_reference)}&maxwidth=800`
         : undefined;
       const photos = details?.photos?.length ? details.photos : (searchPhoto ? [searchPhoto] : []);
       return {

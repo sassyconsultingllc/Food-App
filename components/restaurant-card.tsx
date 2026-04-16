@@ -141,7 +141,7 @@ export function RestaurantCard({
           <View style={[styles.ratingBadge, { backgroundColor: AppColors.skyBlue }]}>
             <IconSymbol name="star.fill" size={12} color={AppColors.white} />
             <ThemedText style={styles.ratingText}>
-              {restaurant.ratings.aggregated.toFixed(1)}
+              {(restaurant.ratings?.aggregated ?? 0).toFixed(1)}
             </ThemedText>
           </View>
 
