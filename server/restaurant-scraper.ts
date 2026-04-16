@@ -542,7 +542,7 @@ async function enrichGooglePlace(place: any, apiKey: string) {
 
     // Build photo URLs from details (up to 20)
     const photos = (d.photos || []).slice(0, 20).map((p: any) =>
-      `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${p.photo_reference}&key=${apiKey}`
+      `/api/photo?ref=${encodeURIComponent(p.photo_reference)}&maxwidth=800`
     );
 
     // Construct a menu search URL via the place's website
@@ -611,7 +611,7 @@ async function fetchFromGooglePlaces(
 
       // Use details photos if available (up to 20), fall back to search photo
       const searchPhoto = place.photos?.[0]
-        ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${place.photos[0].photo_reference}&key=${apiKey}`
+        ? `/api/photo?ref=${encodeURIComponent(place.photos[0].photo_reference)}&maxwidth=800`
         : undefined;
       const detailPhotos = details?.photos || [];
       const photos = detailPhotos.length > 0 ? detailPhotos : (searchPhoto ? [searchPhoto] : []);

@@ -229,7 +229,7 @@ function transformGooglePlaceToRestaurant(place: any, apiKey: string): ScrapedRe
     },
     hours: parseGoogleHours(place.opening_hours),
     photos: place.photos?.slice(0, 10).map((p: any) =>
-      `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${p.photo_reference}&key=${apiKey}`
+      `/api/photo?ref=${encodeURIComponent(p.photo_reference)}&maxwidth=800`
     ) || [],
     isCulvers: place.name?.toLowerCase().includes("culver's") || false,
     sentiment,
