@@ -43,7 +43,9 @@ export function RestaurantCard({
     router.push(`/restaurant/${restaurant.id}` as any);
   };
 
-  const openStatus = getOpenStatus(restaurant.hours);
+  const openStatus = restaurant.hours
+    ? getOpenStatus(restaurant.hours)
+    : { isOpen: false, statusText: "Hours unknown", todayHours: undefined };
 
   return (
     <Pressable

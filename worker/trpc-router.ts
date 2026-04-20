@@ -43,7 +43,7 @@ export const router = t.router;
 let cacheTablesInitialized = false;
 async function ensureCacheTables(db: any) {
   if (cacheTablesInitialized) return;
-  await ensureCacheTables(db);
+  await initCacheTables(db);
   cacheTablesInitialized = true;
 }
 
@@ -945,8 +945,8 @@ export const appRouter = router({
         } catch {
           return { success: false as const, error: "Invalid URL." };
         }
-        if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-          return { success: false as const, error: "Only http(s) URLs are supported." };
+        if (parsed.protocol !== "https:") {
+          return { success: false as const, error: "Only HTTPS Google Maps URLs are supported." };
         }
         const host = parsed.hostname.toLowerCase();
         const isGoogleMaps =
