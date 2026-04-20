@@ -430,7 +430,10 @@ app.get("/api/photo", async (c) => {
   }
 
   const ref = c.req.query("ref");
-  const maxwidth = c.req.query("maxwidth") || "800";
+  // Clamp maxwidth to prevent attackers from requesting absurdly large
+  // images that waste bandwidth and Google API cost.
+  const rawMaxwidth = parseInt(c.req.query("maxwidth") || "800", 10);
+  const maxwidth = String(Math.min(Math.max(rawMaxwidth || 800, 100), 2000));
   if (!ref || ref.length > 2000) {
     return c.json({ error: "Missing or invalid ref" }, 400);
   }

@@ -38,6 +38,15 @@ const t = initTRPC.context<Context>().create({
 export const publicProcedure = t.procedure;
 export const router = t.router;
 
+// Once-guard for initCacheTables — no need to run CREATE TABLE IF NOT EXISTS
+// on every single request. One successful call per worker isolate is enough.
+let cacheTablesInitialized = false;
+async function ensureCacheTables(db: any) {
+  if (cacheTablesInitialized) return;
+  await ensureCacheTables(db);
+  cacheTablesInitialized = true;
+}
+
 /**
  * Constant-time string compare to avoid timing-side-channel leakage of
  * the debug token one byte at a time.
@@ -123,7 +132,7 @@ export const appRouter = router({
 
         if (db) {
           try {
-            await initCacheTables(db);
+            await ensureCacheTables(db);
           } catch (e) {
             console.warn("[Router] Cache init failed:", e);
           }
@@ -635,7 +644,7 @@ export const appRouter = router({
         }
 
         if (db) {
-          try { await initCacheTables(db); } catch (e) { /* ignore */ }
+          try { await ensureCacheTables(db); } catch (e) { /* ignore */ }
         }
 
         // Match the main search cache key shape — include radius so two
@@ -796,9 +805,23 @@ export const appRouter = router({
           );
         }
 
-        // Clamp display name to printable characters and trim.
+        // Reject notes that became empty after PII/profanity scrubbing (e.g.
+        // a note that was ONLY a phone number). Without this check, blank
+        // entries would accumulate in KV and render as empty cards in the UI.
+        if (!guard.cleaned.trim() || guard.cleaned.trim().length < 2) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Note is empty after content processing. Please add more text.",
+          });
+        }
+
+        // Clamp display name to printable characters, HTML-escape to prevent
+        // XSS if rendered in a WebView/web context, and trim.
         const safeName = (input.displayName || "")
           .replace(/[\x00-\x1F\x7F]/g, "")
+          .replace(/[&<>"']/g, (ch) =>
+            ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]!)
+          )
           .trim()
           .slice(0, 30);
 
@@ -875,6 +898,25 @@ export const appRouter = router({
         userId: z.string().min(1).max(128),
       }))
       .mutation(async ({ input, ctx }) => {
+        // Validate userId format (alphanumeric + dash/underscore, max 64)
+        if (!/^[\w-]{1,64}$/.test(input.userId)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid userId format." });
+        }
+
+        // Rate-limit per IP — this endpoint makes external API calls that
+        // cost money (Google Places Details). 10 calls/minute per IP.
+        const shareRlKv = ctx.env.RATE_LIMIT;
+        if (shareRlKv) {
+          const ip = ctx.req?.headers.get("cf-connecting-ip") || "anon";
+          const rl = await checkNoteRateLimit(shareRlKv, `share:${ip}`, 10);
+          if (!rl.allowed) {
+            throw new TRPCError({
+              code: "TOO_MANY_REQUESTS",
+              message: "Too many share imports. Please try again in a minute.",
+            });
+          }
+        }
+
         const db = ctx.env.DB;
         if (!db) {
           throw new TRPCError({

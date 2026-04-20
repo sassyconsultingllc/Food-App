@@ -14,14 +14,21 @@ import {
 } from "@/utils/photo-classifier";
 
 export function useClassifiedPhotos(photos: string[] | undefined): ClassifiedPhotos {
-  // Stable key for the effect — uses the length + a checksum-ish of
-  // the first and last URL so two arrays with the same content produce
-  // the same key without depending on `.join("|")` (which collides on
-  // URLs containing a literal `|`).
+  // Stable key for the effect — a simple hash of ALL photo URLs so that
+  // any change in the array content (even if length and first/last are
+  // the same) triggers re-classification.
   const photosKey = useMemo(() => {
     const list = photos || [];
     if (!list.length) return "";
-    return `${list.length}:${list[0]}:${list[list.length - 1]}`;
+    // djb2 hash over all URLs joined — cheap and collision-resistant
+    // enough for our purposes (triggering an effect, not crypto).
+    let hash = 5381;
+    for (const url of list) {
+      for (let i = 0; i < url.length; i++) {
+        hash = ((hash << 5) + hash + url.charCodeAt(i)) | 0;
+      }
+    }
+    return `${list.length}:${hash}`;
   }, [photos]);
 
   const [state, setState] = useState<ClassifiedPhotos>(() => ({

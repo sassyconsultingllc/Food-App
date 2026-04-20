@@ -101,11 +101,17 @@ export function RestaurantCard({
             {restaurant.name}
           </ThemedText>
           {onFavoritePress && (
-            <Pressable 
-              onPress={onFavoritePress} 
+            <Pressable
+              onPress={(e) => {
+                // Stop propagation so tapping the heart doesn't also
+                // trigger the parent card's onPress (navigation).
+                e.stopPropagation();
+                onFavoritePress();
+              }}
               hitSlop={8}
               accessibilityLabel={isFavorite ? "Remove from favorites" : "Add to favorites"}
               accessibilityRole="button"
+              accessibilityState={{ selected: isFavorite }}
               focusable
               style={undefined}
             >
