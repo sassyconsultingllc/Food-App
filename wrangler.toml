@@ -46,6 +46,16 @@ id = "60b92d22885449588e7edeb401c1e66f"
 binding = "FOODIE_PUBLIC_NOTES"
 id = "f58d8de66b624373b3f316b839c7bfcf"
 
+# Optional: dedicated namespace for vision-classification results. The
+# worker falls back to RATE_LIMIT when this is absent (backward compat).
+# To enable, run:
+#   wrangler kv:namespace create VISION_CACHE
+#   wrangler kv:namespace create VISION_CACHE --preview
+# then uncomment the block below and paste the IDs.
+# [[kv_namespaces]]
+# binding = "VISION_CACHE"
+# id = "<paste production id here>"
+
 [vars]
 NODE_ENV = "production"
 VITE_APP_ID = "foodie-finder"

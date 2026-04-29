@@ -600,10 +600,20 @@ async function fetchFromGooglePlaces(
 
     const places = data.results?.slice(0, limit) || [];
 
-    // Enrich each place with Place Details to get full photo set + menu info
-    const enriched = await Promise.allSettled(
-      places.map((place: any) => enrichGooglePlace(place, apiKey!))
-    );
+    // Enrich each place with Place Details. Google Places Details has a
+    // soft QPS limit (~100 default) that's easy to exceed with a 50-result
+    // search firing 50 concurrent details calls. Bound to 5-concurrent so
+    // we stay well under the QPS ceiling and don't burst-bill the project.
+    const ENRICH_CONCURRENCY = 5;
+    type EnrichResult = PromiseSettledResult<Awaited<ReturnType<typeof enrichGooglePlace>>>;
+    const enriched: EnrichResult[] = [];
+    for (let i = 0; i < places.length; i += ENRICH_CONCURRENCY) {
+      const batch = places.slice(i, i + ENRICH_CONCURRENCY);
+      const batchResults = await Promise.allSettled(
+        batch.map((place: any) => enrichGooglePlace(place, apiKey!))
+      );
+      enriched.push(...batchResults);
+    }
 
     return enriched.map((result, i) => {
       const place = places[i];

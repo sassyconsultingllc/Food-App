@@ -60,7 +60,7 @@ function ConfettiPiece({ index, startDelay, onComplete }: ConfettiPieceProps) {
         withTiming(0, { duration: duration / 4 })
       )
     );
-    
+
     // Fall down
     translateY.value = withDelay(
       startDelay,
@@ -69,13 +69,13 @@ function ConfettiPiece({ index, startDelay, onComplete }: ConfettiPieceProps) {
         easing: Easing.bezier(0.25, 0.1, 0.25, 1),
       })
     );
-    
+
     // Rotate
     rotate.value = withDelay(
       startDelay,
       withTiming(rotationAmount, { duration })
     );
-    
+
     // Fade out at the end
     opacity.value = withDelay(
       startDelay + duration * 0.7,
@@ -85,6 +85,14 @@ function ConfettiPiece({ index, startDelay, onComplete }: ConfettiPieceProps) {
         }
       })
     );
+  // The animation is intentionally a one-shot keyed off mount. We capture
+  // startDelay/index/onComplete by reference at first render and run the
+  // sequence once. The shared values, swayAmount, duration, and
+  // rotationAmount are derived per-instance and shouldn't be in deps —
+  // including them would re-trigger the cascade if a parent re-rendered
+  // with a new onComplete identity (a real bug we hit during the
+  // taste-matches refactor). Disable the lint rule here intentionally.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   
   const animatedStyle = useAnimatedStyle(() => ({

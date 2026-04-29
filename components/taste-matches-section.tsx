@@ -10,7 +10,7 @@
  * Pure client-side; no server/vector index required.
  */
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { Pressable, StyleSheet, View, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
@@ -51,6 +51,20 @@ export function TasteMatchesSection({
   const matches = activeTab === "local" ? localMatches : crossLocaleMatches;
   const otherHasResults =
     activeTab === "local" ? crossLocaleMatches.length > 0 : localMatches.length > 0;
+
+  // Memoize the per-card style objects so the Pressable's render-style
+  // function doesn't allocate a fresh `{backgroundColor, borderColor, ...}`
+  // object on every render (which prevents StyleSheet caching and creates
+  // unnecessary re-render churn on horizontal scroll).
+  const cardBaseStyle = useMemo(
+    () => ({
+      backgroundColor: colors.surface,
+      borderColor: colors.border,
+    }),
+    [colors.surface, colors.border]
+  );
+  const cardPressedOpacity = useMemo(() => ({ opacity: 0.9 }), []);
+  const cardIdleOpacity = useMemo(() => ({ opacity: 1 }), []);
 
   const handlePress = (id: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -150,11 +164,8 @@ export function TasteMatchesSection({
               onPress={() => handlePress(m.restaurant.id)}
               style={({ pressed }) => [
                 styles.card,
-                {
-                  backgroundColor: colors.surface,
-                  borderColor: colors.border,
-                  opacity: pressed ? 0.9 : 1,
-                },
+                cardBaseStyle,
+                pressed ? cardPressedOpacity : cardIdleOpacity,
               ]}
             >
               <View style={styles.cardHeader}>

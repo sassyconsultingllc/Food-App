@@ -46,16 +46,60 @@ function isWeb(): boolean {
   return Platform.OS === "web";
 }
 
+// Allowed parent origins for postMessage. The Sassy preview platform hosts
+// the iframe at one of these; sending to "*" would let any embedder
+// snoop the appDevServerReady envelope (and any future payloads we add).
+//
+// Read once at module load — re-reading process.env per call would force
+// Metro to leave it as a runtime lookup and inflate the bundle.
+const ALLOWED_PARENT_ORIGINS = (() => {
+  const fromEnv = (
+    typeof process !== "undefined" && process?.env?.EXPO_PUBLIC_SASSY_PARENT_ORIGINS
+  )
+    ? process.env.EXPO_PUBLIC_SASSY_PARENT_ORIGINS
+    : "";
+  const defaults = [
+    "https://preview.sassyconsultingllc.com",
+    "https://sassyconsultingllc.com",
+    "https://www.sassyconsultingllc.com",
+  ];
+  const extras = fromEnv
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+  return new Set([...defaults, ...extras]);
+})();
+
+function getValidatedParentOrigin(): string | null {
+  if (typeof window === "undefined" || typeof document === "undefined") return null;
+  // document.referrer reflects the actual parent origin when in an iframe.
+  // We cannot read window.parent.location synchronously due to same-origin
+  // policy, so referrer is the closest stable signal.
+  try {
+    const ref = document.referrer ? new URL(document.referrer).origin : "";
+    return ALLOWED_PARENT_ORIGINS.has(ref) ? ref : null;
+  } catch {
+    return null;
+  }
+}
+
 function sendToParent(type: MessageType, payload: Record<string, unknown> = {}): void {
-  // NOTE: Validate parent origin if we need to transfer sensitive data
   if (!isWeb() || !isInIframe()) return;
+
+  const targetOrigin = getValidatedParentOrigin();
+  if (!targetOrigin) {
+    log(`Refused to post '${type}' — parent origin not in allowlist`);
+    return;
+  }
 
   const message: SpacePreviewerMessage = {
     type: "SpacePreviewerChannel",
     payload: { type, from: "content", to: "container", payload },
   };
-  window.parent.postMessage(message, "*");
-  log(`Sent to parent: ${type}`);
+  // Pass the validated origin instead of "*" so a malicious parent that
+  // navigated this iframe can't intercept the postMessage payload.
+  window.parent.postMessage(message, targetOrigin);
+  log(`Sent to parent: ${type} (origin=${targetOrigin})`);
 }
 
 let initialized = false;
@@ -71,7 +115,13 @@ function isValidInsets(payload: Record<string, unknown>): payload is SafeAreaIns
 }
 
 function handleMessage(event: MessageEvent<unknown>): void {
-  // NOTE: Validate event.origin if we need to transfer sensitive data
+  // Reject messages from any origin not on the parent allowlist. Without
+  // this check a same-page injection via window.postMessage from an
+  // unrelated iframe could pretend to be the preview container and feed
+  // us setSafeAreaInsets payloads (which directly affect layout) or any
+  // future container→content message we add.
+  if (!ALLOWED_PARENT_ORIGINS.has(event.origin)) return;
+
   const data = event.data as SpacePreviewerMessage | undefined;
   if (!data || data.type !== "SpacePreviewerChannel") return;
 

@@ -342,7 +342,15 @@ app.post("/api/vision/classify", async (c) => {
     return c.json({ error: "urls must contain valid http(s) URLs" }, 400);
   }
 
-  const cacheKv = env.RATE_LIMIT as KVNamespace | undefined;
+  // Prefer the dedicated VISION_CACHE namespace when bound — falling back
+  // to RATE_LIMIT keeps existing deployments working but mixes vision
+  // cache entries with rate-limit counters in the same namespace, which
+  // can lead to rate-limit keys getting evicted under heavy vision load.
+  // To migrate: `wrangler kv:namespace create VISION_CACHE`, then add the
+  // binding to wrangler.toml. No code change required after that.
+  const cacheKv =
+    (env.VISION_CACHE as KVNamespace | undefined) ??
+    (env.RATE_LIMIT as KVNamespace | undefined);
   const results: Record<string, "menu" | "food"> = {};
   const uncached: string[] = [];
 

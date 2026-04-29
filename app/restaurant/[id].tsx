@@ -312,7 +312,13 @@ export default function RestaurantDetailScreen() {
             Contact & Location
           </ThemedText>
           
-          <Pressable onPress={handleAddressPress} style={styles.contactRow}>
+          <Pressable
+            onPress={handleAddressPress}
+            style={styles.contactRow}
+            accessibilityRole="button"
+            accessibilityLabel="Open address in Maps"
+            accessibilityHint="Opens the restaurant address in your Maps app"
+          >
             <IconSymbol name="mappin.and.ellipse" size={20} color={colors.accent} />
             <View style={styles.contactText}>
               <ThemedText>
@@ -323,7 +329,13 @@ export default function RestaurantDetailScreen() {
           </Pressable>
 
           {restaurant.phone && (
-            <Pressable onPress={handlePhonePress} style={styles.contactRow}>
+            <Pressable
+              onPress={handlePhonePress}
+              style={styles.contactRow}
+              accessibilityRole="button"
+              accessibilityLabel={`Call ${restaurant.name}`}
+              accessibilityHint="Opens your phone dialer with the restaurant's number"
+            >
               <IconSymbol name="phone.fill" size={20} color={colors.accent} />
               <ThemedText style={styles.contactText}>{restaurant.phone}</ThemedText>
               <IconSymbol name="chevron.right" size={20} color={colors.textSecondary} />
@@ -331,7 +343,12 @@ export default function RestaurantDetailScreen() {
           )}
 
           {restaurant.website && (
-            <Pressable onPress={handleWebsitePress} style={styles.contactRow}>
+            <Pressable
+              onPress={handleWebsitePress}
+              style={styles.contactRow}
+              accessibilityRole="link"
+              accessibilityLabel="Open restaurant website"
+            >
               <IconSymbol name="globe" size={20} color={colors.accent} />
               <ThemedText style={[styles.contactText, { color: colors.tint }]} numberOfLines={1}>
                 Visit Website
@@ -341,9 +358,11 @@ export default function RestaurantDetailScreen() {
           )}
 
           {restaurant.yelpUrl && (
-            <Pressable 
-              onPress={() => safeOpenUrl(restaurant.yelpUrl)} 
+            <Pressable
+              onPress={() => safeOpenUrl(restaurant.yelpUrl)}
               style={styles.contactRow}
+              accessibilityRole="link"
+              accessibilityLabel="View restaurant on Yelp"
             >
               <IconSymbol name="star.circle.fill" size={20} color="#d32323" />
               <ThemedText style={[styles.contactText, { color: colors.tint }]} numberOfLines={1}>
@@ -354,9 +373,11 @@ export default function RestaurantDetailScreen() {
           )}
 
           {restaurant.googleMapsUrl && (
-            <Pressable 
-              onPress={() => safeOpenUrl(restaurant.googleMapsUrl)} 
+            <Pressable
+              onPress={() => safeOpenUrl(restaurant.googleMapsUrl)}
               style={styles.contactRow}
+              accessibilityRole="link"
+              accessibilityLabel="View restaurant on Google Maps"
             >
               <IconSymbol name="map.fill" size={20} color="#4285f4" />
               <ThemedText style={[styles.contactText, { color: colors.tint }]} numberOfLines={1}>

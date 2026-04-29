@@ -15,6 +15,13 @@ export interface Env {
   // KV Namespaces
   RATE_LIMIT?: KVNamespace;
   FOODIE_PUBLIC_NOTES?: KVNamespace;
+  // Optional: dedicated namespace for vision-classification results. If
+  // absent the vision endpoint falls back to RATE_LIMIT for backward
+  // compatibility, but mixing them risks rate-limit keys getting evicted
+  // by high-traffic vision caching. Provision via:
+  //   wrangler kv:namespace create VISION_CACHE
+  // then add the ID to wrangler.toml under [[kv_namespaces]].
+  VISION_CACHE?: KVNamespace;
 
   // Vectorize - Semantic search index
   VECTORIZE?: VectorizeIndex;

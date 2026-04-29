@@ -573,6 +573,8 @@ export default function BrowseScreen() {
                     onPress={() => handlePriceFilterPress(filter.key)}
                     focusable
                     accessibilityRole="button"
+                    accessibilityState={{ selected: activePriceFilter === filter.key }}
+                    accessibilityLabel={`${filter.label} price filter${activePriceFilter === filter.key ? ', selected' : ''}`}
                     style={({ pressed }: { pressed: boolean }) => [
                       styles.priceChip,
                       {
@@ -654,6 +656,8 @@ export default function BrowseScreen() {
                     onPress={() => handleDietaryFilterPress(dietary.value)}
                     focusable
                     accessibilityRole="button"
+                    accessibilityState={{ selected: activeDietaryFilters.includes(dietary.value) }}
+                    accessibilityLabel={`${dietary.label} dietary filter${activeDietaryFilters.includes(dietary.value) ? ', active' : ''}`}
                     style={({ pressed }: { pressed: boolean }) => [
                       styles.dietaryChip,
                       {
@@ -711,6 +715,17 @@ export default function BrowseScreen() {
         contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 20 }]}
         columnWrapperStyle={numColumns > 1 ? { justifyContent: 'flex-start', paddingHorizontal: Spacing.md } : undefined}
         showsVerticalScrollIndicator={false}
+        // Restaurant cards have variable heights (photo + name + tag chips
+        // + ratings + dietary chips), which makes a strict getItemLayout
+        // unreliable — a wrong estimate produces visible scroll-snap bugs.
+        // Instead, keep memory bounded and reduce initial-paint cost via
+        // standard FlatList perf knobs. removeClippedSubviews helps on
+        // Android only; on iOS it can cause flicker so the default false
+        // is left as-is (FlatList chooses the platform default).
+        initialNumToRender={numColumns * 4}
+        maxToRenderPerBatch={numColumns * 6}
+        windowSize={7}
+        updateCellsBatchingPeriod={50}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             {aiLoading && searchMode === 'ai' ? (

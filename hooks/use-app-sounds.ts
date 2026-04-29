@@ -6,7 +6,7 @@
  * Respects the user's sound-enabled preference from useSoundSettings.
  */
 
-import { useAudioPlayer } from "expo-audio";
+import { createAudioPlayer, useAudioPlayer } from "expo-audio";
 import { useCallback, useEffect, useRef } from "react";
 
 // Static requires so Metro bundles them
@@ -29,13 +29,14 @@ export function useAppSounds(soundEnabled: boolean) {
   const playersRef = useRef<Map<SoundName, ReturnType<typeof useAudioPlayer>>>(new Map());
 
   const playSound = useCallback(
-    async (name: SoundName) => {
+    (name: SoundName) => {
       if (!soundEnabled) return;
 
       try {
-        // Lazy-create players isn't possible with the hook API,
-        // so we use the imperative createAudioPlayer instead
-        const { createAudioPlayer } = await import("expo-audio");
+        // createAudioPlayer is imported statically so the very first sound
+        // doesn't pay the dynamic-import overhead (~50-150 ms cold). Lazy
+        // PLAYER instantiation is preserved — we still only allocate a
+        // player when a sound is actually requested.
         let player = playersRef.current.get(name);
         if (!player) {
           player = createAudioPlayer(SOUNDS[name]);
