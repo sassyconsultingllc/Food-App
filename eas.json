@@ -49,10 +49,33 @@
     }
   },
   "submit": {
+    "internal": {
+      "android": {
+        "serviceAccountKeyPath": "./keys/foodie-finder-482309-b1424d611d21.json",
+        "track": "internal",
+        "releaseStatus": "completed",
+        "changesNotSentForReview": true
+      }
+    },
+    "beta": {
+      "android": {
+        "serviceAccountKeyPath": "./keys/foodie-finder-482309-b1424d611d21.json",
+        "track": "beta",
+        "releaseStatus": "completed"
+      }
+    },
+    "production-staged": {
+      "android": {
+        "serviceAccountKeyPath": "./keys/foodie-finder-482309-b1424d611d21.json",
+        "track": "production",
+        "releaseStatus": "inProgress",
+        "rollout": 0.1
+      }
+    },
     "production": {
       "android": {
-        "serviceAccountKeyPath": "./keys/foodie-finder-482309-23769b0ab7f7.json",
-        "track": "internal",
+        "serviceAccountKeyPath": "./keys/foodie-finder-482309-b1424d611d21.json",
+        "track": "production",
         "releaseStatus": "draft"
       },
       "ios": {
