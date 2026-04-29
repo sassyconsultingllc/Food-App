@@ -8,6 +8,16 @@ import { cors } from "hono/cors";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "./trpc-router";
 import { scrapeRestaurants, getCoords } from "./scraper";
+import { initCacheTables } from "./cache";
+// =============================================================================
+// D1 Cache Table Initialization (fixes Mercury audit CRITICAL)
+// =============================================================================
+let cacheTablesInitialized = false;
+async function ensureCacheTablesIfNeeded(db: any) {
+  if (cacheTablesInitialized) return;
+  await initCacheTables(db);
+  cacheTablesInitialized = true;
+}
 import type { Env } from "./context";
 import type { KVNamespace } from "@cloudflare/workers-types";
 
@@ -146,9 +156,12 @@ app.all('/api/debug/inspect', async (c) => {
     const url = c.req.url;
     // Filter out the authorization header so the debug token doesn't leak
     // in the response if someone logs or screenshots it.
+    // HonoRequest exposes a single-header getter via c.req.header(name); the
+    // raw Web Request is the only place a full headers iterator exists.
+    // Fall back to an empty record when the raw request isn't attached.
     const rawHeaders = c.req?.raw?.headers
       ? Object.fromEntries(c.req.raw.headers.entries())
-      : (c.req.header() as Record<string, string>);
+      : {};
     const { authorization, ...headers } = rawHeaders;
     const requestUrl = c.req?.raw?.url ?? c.req.url ?? '';
     const queryParams = requestUrl ? Object.fromEntries(new URL(requestUrl).searchParams.entries()) : {};
@@ -210,6 +223,10 @@ app.get('/api/debug/geocode', async (c) => {
 
     // Get the canonical coords using the scraper helper
     const coords = await getCoords(postalCode as string, countryCode as string | undefined);
+
+    if (coords.lat === 0 && coords.lng === 0) {
+      return c.json({ ok: false, error: 'Geocoding failed', coords }, 400);
+    }
 
     // Also fetch raw nominatim responses for both country-scoped and unrestricted
     const buildUrl = (cc?: string) => {
@@ -468,6 +485,7 @@ app.get("/api/menu/:restaurantId", async (c) => {
   const db = c.env.DB;
   if (!db) return c.json({ error: "DB not configured" }, 500);
 
+  await ensureCacheTablesIfNeeded(db);
   try {
     const { results } = await db.prepare(
       "SELECT id, image_url, source, caption, sort_order FROM menu_photos WHERE restaurant_id = ? ORDER BY sort_order ASC, created_at DESC"
@@ -479,7 +497,7 @@ app.get("/api/menu/:restaurantId", async (c) => {
 });
 
 // POST upload menu photo
-const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/heic"]);
+const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/gif"]);
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const MAX_FILES_PER_REQUEST = 5;
 const MAX_PHOTOS_PER_RESTAURANT = 20;
@@ -515,6 +533,11 @@ function sniffImageType(bytes: Uint8Array): string | null {
       (bytes[8] === 0x6d && bytes[9] === 0x73 && bytes[10] === 0x66)
     )
   ) return "image/heic";
+  // GIF: 47 49 46 38 37 61 or 47 49 46 38 39 61
+  if (
+    bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38 &&
+    (bytes[4] === 0x37 || bytes[4] === 0x39) && bytes[5] === 0x61
+  ) return "image/gif";
   return null;
 }
 
@@ -523,6 +546,8 @@ app.post("/api/menu/:restaurantId/upload", async (c) => {
   const bucket = c.env.MENU_PHOTOS;
   const db = c.env.DB;
   if (!bucket || !db) return c.json({ error: "Storage not configured" }, 500);
+
+  await ensureCacheTablesIfNeeded(db);
 
   // Validate restaurantId format (alphanumeric, hyphens, underscores only)
   if (!/^[\w-]{1,128}$/.test(restaurantId)) {
@@ -585,7 +610,7 @@ app.post("/api/menu/:restaurantId/upload", async (c) => {
       }
 
       const id = `menu_${restaurantId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      const extMap: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/heic": "heic" };
+      const extMap: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/heic": "heic", "image/gif": "gif" };
       const ext = extMap[sniffedType] || "jpg";
       const r2Key = `menus/${restaurantId}/${id}.${ext}`;
       const imageUrl = `https://foodie-finder-menus.sassyconsultingllc.com/${r2Key}`;
@@ -593,9 +618,13 @@ app.post("/api/menu/:restaurantId/upload", async (c) => {
       // Write D1 FIRST, then R2. If the D1 insert fails we don't leave
       // an orphaned R2 object behind. If the R2 put fails after a
       // successful D1 insert, we roll the D1 row back.
-      await db.prepare(
-        "INSERT INTO menu_photos (id, restaurant_id, image_url, source, caption) VALUES (?, ?, ?, 'user', ?)"
-      ).bind(id, restaurantId, imageUrl, key === "caption" ? String(formValue) : null).run();
+      try {
+        await db.prepare(
+          "INSERT INTO menu_photos (id, restaurant_id, image_url, source, caption) VALUES (?, ?, ?, 'user', ?)"
+        ).bind(id, restaurantId, imageUrl, key === "caption" ? String(formValue) : null).run();
+      } catch (dbErr) {
+        return c.json({ error: "Failed to save menu photo. Please try again." }, 500);
+      }
 
       try {
         await bucket.put(r2Key, arrayBuffer, {
@@ -622,13 +651,53 @@ app.post("/api/menu/:restaurantId/upload", async (c) => {
   }
 });
 
-// tRPC endpoint
+// PATCH: Geocode (0,0) error handling
+const origGeocodeHandler = app.get.bind(app);
+app.get('/api/debug/geocode', async (c) => {
+  try {
+    const postalCode = c.req.query('postalCode') || c.req.query('zip') || '';
+    const countryCode = c.req.query('countryCode') || undefined;
+
+    if (!postalCode) return c.json({ ok: false, error: 'postalCode required' }, 400);
+
+    // Get the canonical coords using the scraper helper
+    const coords = await getCoords(postalCode as string, countryCode as string | undefined);
+
+    if (coords.lat === 0 && coords.lng === 0) {
+      return c.json({ ok: false, error: 'Geocoding failed', coords }, 400);
+    }
+
+    // Also fetch raw nominatim responses for both country-scoped and unrestricted
+    const buildUrl = (cc?: string) => {
+      const u = new URL('https://nominatim.openstreetmap.org/search');
+      u.searchParams.set('postalcode', postalCode as string);
+      u.searchParams.set('format', 'json');
+      u.searchParams.set('limit', '3');
+      u.searchParams.set('addressdetails', '1');
+      if (cc) u.searchParams.set('countrycodes', cc.toLowerCase());
+      return u.toString();
+    };
+
+    const countryScoped = countryCode ? await (await fetch(buildUrl(countryCode as string), { headers: { 'User-Agent': 'FoodieFinder/2.0 (Diagnostic)' } })).json() : null;
+    const usScoped = await (await fetch(buildUrl('US'), { headers: { 'User-Agent': 'FoodieFinder/2.0 (Diagnostic)' } })).json();
+    const unrestricted = await (await fetch(buildUrl(), { headers: { 'User-Agent': 'FoodieFinder/2.0 (Diagnostic)' } })).json();
+
+    return c.json({ ok: true, postalCode, countryCode: countryCode || null, coords, countryScoped, usScoped, unrestricted });
+  } catch (err) {
+    return c.json({ ok: false, error: String(err) }, 500);
+  }
+});
+
+// tRPC endpoint. Pass the Hono context through so procedures can set
+// response headers (e.g. X-RateLimit-Remaining). The previous shape only
+// exposed env+req, so any procedure that tried `ctx.res.setHeader(...)`
+// silently no-op'd in the Workers runtime.
 app.all("/api/trpc/*", async (c) => {
   return fetchRequestHandler({
     endpoint: "/api/trpc",
     req: c.req.raw,
     router: appRouter,
-    createContext: () => ({ env: c.env, req: c.req.raw }),
+    createContext: () => ({ env: c.env, req: c.req.raw, c }),
   });
 });
 

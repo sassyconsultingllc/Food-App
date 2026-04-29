@@ -1046,16 +1046,39 @@ export async function scrapeRestaurantsByLocation(
     return b.ratings.totalReviews - a.ratings.totalReviews;
   });
 
-  // Index to vector store asynchronously
-  merged.forEach(restaurant => {
-    addRestaurantToVectorStore({
-      id: restaurant.id,
-      name: restaurant.name,
-      reviews: [],
-      description: restaurant.reviewSummary,
-      cuisineType: restaurant.cuisineType,
-    }).catch(console.error);
-  });
+  // Index to vector store with bounded concurrency. Previously this was a
+  // forEach of fire-and-forget promises — for a 50-restaurant scrape that's
+  // 50 simultaneous calls into the embedding service, exhausting CPU and
+  // tripping rate limits. Cap at 5 concurrent and don't block the caller's
+  // response — kick off the whole indexing pass in the background.
+  const indexInBackground = async () => {
+    const CONCURRENCY = 5;
+    for (let i = 0; i < merged.length; i += CONCURRENCY) {
+      const batch = merged.slice(i, i + CONCURRENCY);
+      await Promise.allSettled(
+        batch.map(restaurant =>
+          addRestaurantToVectorStore({
+            id: restaurant.id,
+            name: restaurant.name,
+            reviews: [],
+            description: restaurant.reviewSummary,
+            cuisineType: restaurant.cuisineType,
+          })
+        )
+      ).then(results => {
+        for (const r of results) {
+          if (r.status === "rejected") {
+            console.error("[scraper] vector-store index failed:", r.reason);
+          }
+        }
+      });
+    }
+  };
+  // Detached on purpose — the scrape result should return immediately.
+  // .catch is the guard against unhandled rejections from the IIFE itself.
+  indexInBackground().catch(err =>
+    console.error("[scraper] vector-store batch error:", err)
+  );
 
   return merged.slice(0, limit);
 }

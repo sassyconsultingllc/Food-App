@@ -35,6 +35,38 @@ import { useSimilarRestaurants, useVectorStats } from "@/hooks/use-semantic-sear
 import { shareRestaurant } from "@/utils/share-utils";
 import { formatDisplayAddress, formatMapsAddress } from "@/utils/address-utils";
 
+/**
+ * Validate a URL before handing it to Linking.openURL. Restaurant data flows
+ * from third-party scrapers (Google Places / Foursquare / HERE / OSM) — a
+ * crafted entry could embed a `javascript:` URL or a non-http scheme that
+ * triggers a side effect on tap. Reject anything that isn't an explicit
+ * https or tel: URL.
+ */
+function isSafeExternalUrl(url: string | null | undefined): url is string {
+  if (!url || typeof url !== "string") return false;
+  try {
+    const parsed = new URL(url);
+    // Only allow https for web links and tel: for phone dialing. http is
+    // intentionally rejected — most scraped sites support https, and
+    // permitting http opens up downgrade attacks.
+    return parsed.protocol === "https:" || parsed.protocol === "tel:";
+  } catch {
+    return false;
+  }
+}
+
+async function safeOpenUrl(url: string | null | undefined): Promise<void> {
+  if (!isSafeExternalUrl(url)) {
+    console.warn("[restaurant-detail] refusing to open unsafe URL:", url);
+    return;
+  }
+  try {
+    await Linking.openURL(url);
+  } catch (e) {
+    console.warn("[restaurant-detail] Linking.openURL failed:", e);
+  }
+}
+
 export default function RestaurantDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -127,21 +159,25 @@ export default function RestaurantDetailScreen() {
 
   const handlePhonePress = () => {
     if (restaurant.phone) {
-      Linking.openURL(`tel:${restaurant.phone}`);
+      // Sanitize phone digits — drop anything that isn't a digit, +, -, or
+      // space. A scraped value like `\nshell payload\ntel:...` would be
+      // treated as a tel: URI without this.
+      const sanitized = restaurant.phone.replace(/[^\d+\-\s().]/g, "");
+      if (sanitized) safeOpenUrl(`tel:${sanitized}`);
     }
   };
 
   const handleWebsitePress = () => {
-    if (restaurant.website) {
-      Linking.openURL(restaurant.website);
-    }
+    safeOpenUrl(restaurant.website);
   };
 
   const handleAddressPress = () => {
     const address = encodeURIComponent(
       formatMapsAddress(restaurant.address, restaurant.city, restaurant.state, restaurant.zipCode)
     );
-    Linking.openURL(`https://maps.google.com/?q=${address}`);
+    // We construct this URL ourselves from validated address fields, so the
+    // safeOpenUrl gate is just defense-in-depth.
+    safeOpenUrl(`https://maps.google.com/?q=${address}`);
   };
 
   const handleSharePress = async () => {
@@ -306,7 +342,7 @@ export default function RestaurantDetailScreen() {
 
           {restaurant.yelpUrl && (
             <Pressable 
-              onPress={() => Linking.openURL(restaurant.yelpUrl!)} 
+              onPress={() => safeOpenUrl(restaurant.yelpUrl)} 
               style={styles.contactRow}
             >
               <IconSymbol name="star.circle.fill" size={20} color="#d32323" />
@@ -319,7 +355,7 @@ export default function RestaurantDetailScreen() {
 
           {restaurant.googleMapsUrl && (
             <Pressable 
-              onPress={() => Linking.openURL(restaurant.googleMapsUrl!)} 
+              onPress={() => safeOpenUrl(restaurant.googleMapsUrl)} 
               style={styles.contactRow}
             >
               <IconSymbol name="map.fill" size={20} color="#4285f4" />
@@ -598,7 +634,7 @@ export default function RestaurantDetailScreen() {
             
             {restaurant.phone && (
               <Pressable 
-                onPress={() => Linking.openURL(`tel:${restaurant.phone}`)}
+                onPress={() => handlePhonePress()}
                 style={styles.orderOption}
               >
                 <IconSymbol name="phone.fill" size={20} color={colors.accent} />
@@ -609,7 +645,7 @@ export default function RestaurantDetailScreen() {
             
             {restaurant.website && (
               <Pressable 
-                onPress={() => Linking.openURL(restaurant.website!)}
+                onPress={() => safeOpenUrl(restaurant.website)}
                 style={styles.orderOption}
               >
                 <IconSymbol name="globe" size={20} color={colors.accent} />
@@ -620,7 +656,7 @@ export default function RestaurantDetailScreen() {
             
             {restaurant.doordashUrl && (
               <Pressable 
-                onPress={() => Linking.openURL(restaurant.doordashUrl!)}
+                onPress={() => safeOpenUrl(restaurant.doordashUrl)}
                 style={styles.orderOption}
               >
                 <IconSymbol name="car.fill" size={20} color="#FF3008" />
@@ -631,7 +667,7 @@ export default function RestaurantDetailScreen() {
             
             {restaurant.ubereatsUrl && (
               <Pressable 
-                onPress={() => Linking.openURL(restaurant.ubereatsUrl!)}
+                onPress={() => safeOpenUrl(restaurant.ubereatsUrl)}
                 style={styles.orderOption}
               >
                 <IconSymbol name="car.fill" size={20} color="#06C167" />
@@ -642,7 +678,7 @@ export default function RestaurantDetailScreen() {
             
             {restaurant.grubhubUrl && (
               <Pressable 
-                onPress={() => Linking.openURL(restaurant.grubhubUrl!)}
+                onPress={() => safeOpenUrl(restaurant.grubhubUrl)}
                 style={styles.orderOption}
               >
                 <IconSymbol name="car.fill" size={20} color="#F63440" />

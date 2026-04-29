@@ -188,8 +188,13 @@ export function CulversFlavorCalendar({ zipCode, compact = false }: CulversFlavo
             contentContainerStyle={styles.nearbyScroll}
           >
             {data.nearbyLocations.map((location, index) => (
-              <View 
-                key={index} 
+              // Address is the most stable identifier in this payload —
+              // multiple Culver's locations may share a flavor, but each
+              // has a unique street address. Falling back to the index
+              // for the rare empty-address case keeps React happy without
+              // letting a list reorder shuffle the rendered cards.
+              <View
+                key={location.address || `nearby-${index}`}
                 style={[styles.nearbyCard, { backgroundColor: colors.surface }]}
               >
                 <ThemedText style={styles.nearbyEmoji}>

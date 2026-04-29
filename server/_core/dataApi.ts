@@ -28,22 +28,40 @@ export async function callDataApi(
   const baseUrl = ENV.forgeApiUrl.endsWith("/") ? ENV.forgeApiUrl : `${ENV.forgeApiUrl}/`;
   const fullUrl = new URL("webdevtoken.v1.WebDevService/CallApi", baseUrl).toString();
 
-  const response = await fetch(fullUrl, {
-    method: "POST",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
-      "connect-protocol-version": "1",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
-    },
-    body: JSON.stringify({
-      apiId,
-      query: options.query,
-      body: options.body,
-      path_params: options.pathParams,
-      multipart_form_data: options.formData,
-    }),
-  });
+  // 15 s timeout. Without this an upstream hang would tie up the request
+  // handler indefinitely, fanning out into a denial-of-service if many
+  // clients hit a slow Forge API at once.
+  const controller = new AbortController();
+  const timeoutMs = Number(process.env.FORGE_API_TIMEOUT_MS) || 15_000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let response: Response;
+  try {
+    response = await fetch(fullUrl, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+        "connect-protocol-version": "1",
+        authorization: `Bearer ${ENV.forgeApiKey}`,
+      },
+      body: JSON.stringify({
+        apiId,
+        query: options.query,
+        body: options.body,
+        path_params: options.pathParams,
+        multipart_form_data: options.formData,
+      }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if ((err as { name?: string })?.name === "AbortError") {
+      throw new Error(`Data API request timed out after ${timeoutMs}ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!response.ok) {
     const detail = await response.text().catch(() => "");

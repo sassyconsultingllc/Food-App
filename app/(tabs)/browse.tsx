@@ -238,7 +238,7 @@ export default function BrowseScreen() {
   // AI search results merged with local data
   const aiSearchResults = useMemo(() => {
     if (searchMode !== 'ai' || aiResults.length === 0) return [];
-    
+
     return aiResults.map(result => {
       // Try to get full restaurant data from local cache
       const localData = result.restaurant || restaurantMap.get(result.id);
@@ -254,6 +254,22 @@ export default function BrowseScreen() {
       };
     });
   }, [aiResults, searchMode, restaurantMap]);
+
+  // Map of restaurantId -> relevance score for O(1) lookup in renderRestaurant.
+  // Previously renderRestaurant accessed aiSearchResults[index], which
+  // assumed the AI list and the displayed list had identical ordering and
+  // length — a fragile invariant that breaks if any result gets filtered
+  // out, and silently produces undefined-access when it does.
+  const relevanceScoreById = useMemo(() => {
+    if (searchMode !== 'ai' || aiSearchResults.length === 0) return new Map<string, number>();
+    const m = new Map<string, number>();
+    for (const r of aiSearchResults) {
+      if (r.restaurant?.id != null && typeof r.score === 'number') {
+        m.set(r.restaurant.id, r.score);
+      }
+    }
+    return m;
+  }, [aiSearchResults, searchMode]);
 
   // Final display results
   const displayResults = useMemo(() => {
@@ -313,10 +329,11 @@ export default function BrowseScreen() {
 
   const hasActiveFilters = activeQuickFilter !== "all" || activeCuisine !== "all" || activePriceFilter !== "all" || activeDietaryFilters.length > 0 || searchQuery.length > 0;
 
-  const renderRestaurant = useCallback(({ item, index }: { item: Restaurant; index: number }) => {
-    // Show AI relevance score if in AI mode
-    const aiResult = searchMode === 'ai' ? aiSearchResults[index] : null;
-    const relevanceScore = aiResult?.score;
+  const renderRestaurant = useCallback(({ item }: { item: Restaurant; index: number }) => {
+    // Show AI relevance score if in AI mode. Look up by restaurant id —
+    // index-based lookup was unsafe when result lists got filtered.
+    const relevanceScore =
+      searchMode === 'ai' ? relevanceScoreById.get(item.id) : undefined;
 
     // Only flag taste matches for restaurants that aren't already favorites
     // and aren't in the user's home locale — highlight discovery, not
@@ -344,7 +361,7 @@ export default function BrowseScreen() {
         />
       </View>
     );
-  }, [toggleFavorite, isFavorite, cardWidth, searchMode, aiSearchResults, colors.accent, playSound, profile.sampleSize, matchesTaste]);
+  }, [toggleFavorite, isFavorite, cardWidth, searchMode, relevanceScoreById, colors.accent, playSound, profile.sampleSize, matchesTaste]);
 
   const keyExtractor = useCallback((item: Restaurant) => item.id, []);
 

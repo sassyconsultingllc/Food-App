@@ -117,6 +117,13 @@ export function SpinnerWheel({
   const handleSpin = useCallback(() => {
     if (isSpinning || disabled || displayRestaurants.length === 0) return;
 
+    // Reset to zero before each spin so scrollY doesn't accumulate across
+    // spins. finalScroll is computed against the LAPS constant only, not
+    // relative to the current scrollY, so without a reset the value grows
+    // unbounded on each spin and eventually scrolls the reel past the
+    // rendered slot range, leaving blank space at the top of the wheel.
+    scrollY.value = 0;
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     playSound("wheelSpin");
     onSpinStart();

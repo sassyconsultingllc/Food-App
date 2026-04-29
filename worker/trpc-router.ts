@@ -171,7 +171,11 @@ export const appRouter = router({
           countryCode: effectiveCountryCode,
           radius,
           radiusUnit,
-          limit: Math.max(limit, 50),
+          // Over-fetch to 50 ONLY when a cuisineType filter is applied (so
+          // post-filter slicing still has enough hits). Without a filter,
+          // honor the client's limit exactly to avoid burning paid-API
+          // quota on results we'll discard.
+          limit: cuisineType ? Math.max(limit, 50) : limit,
           foursquareKey: env.FOURSQUARE_API_KEY || "",
           hereKey: env.HERE_API_KEY || "",
           googleKey: env.GOOGLE_PLACES_API_KEY || "",
@@ -761,13 +765,18 @@ export const appRouter = router({
         displayName: z.string().max(30).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
-        const kv = ctx.env.FOODIE_PUBLIC_NOTES;
-        if (!kv) {
+        const kvBinding = ctx.env.FOODIE_PUBLIC_NOTES;
+        if (!kvBinding) {
           throw new TRPCError({
             code: "SERVICE_UNAVAILABLE",
             message: "Public notes storage not configured",
           });
         }
+        // Capture into a const after the null check so the inner appendOnce
+        // closure has a non-nullable type — TS narrowing doesn't carry into
+        // nested function scopes, and we need this binding to be definitely-
+        // defined inside the retry loop below.
+        const kv = kvBinding;
 
         // 1. Rate limit per client IP. FAIL CLOSED: if the RATE_LIMIT KV
         //    binding is missing (misconfigured env, binding drift), reject
@@ -825,8 +834,16 @@ export const appRouter = router({
           .trim()
           .slice(0, 30);
 
+        // HTML-escape the note text to prevent XSS if rendered unsafely
+        function htmlEscape(str: string): string {
+          return str.replace(/[&<>"']/g, (c) => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+          })[c]!);
+        }
+        const safeText = htmlEscape(guard.cleaned);
+
         const note: PublicNote = {
-          text: guard.cleaned,
+          text: safeText,
           name: safeName || undefined,
           ts: Date.now(),
         };
@@ -835,42 +852,98 @@ export const appRouter = router({
         // wrapped in try/catch so a corrupted KV entry doesn't brick
         // the whole restaurant's note feature — if parsing fails we
         // reset to an empty list (matching the getPublicNotes path).
+        //
+        // KV doesn't support compare-and-set, so concurrent writes for the
+        // same restaurant key can lose notes (writer A reads N, writer B
+        // reads N, both write N+1, B's write wins → A's note vanishes).
+        // Mitigation: read-back after write and retry once if our note is
+        // missing. Not airtight under sustained contention but eliminates
+        // single-collision loss, which is the common case.
         const key = `notes:${input.restaurantId}`;
-        const raw = await kv.get(key);
-        let existing: PublicNote[] = [];
-        if (raw) {
-          try {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) existing = parsed;
-          } catch {
-            existing = [];
+
+        async function appendOnce(): Promise<{
+          ok: boolean;
+          note: PublicNote;
+          deduped: boolean;
+        }> {
+          const raw = await kv.get(key);
+          let existing: PublicNote[] = [];
+          if (raw) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) existing = parsed;
+            } catch {
+              existing = [];
+            }
+          }
+
+          const mostRecent = existing[existing.length - 1];
+          if (
+            mostRecent &&
+            mostRecent.text === note.text &&
+            mostRecent.name === note.name &&
+            note.ts - mostRecent.ts < 60_000
+          ) {
+            return { ok: true, note: mostRecent, deduped: true };
+          }
+
+          if (existing.length >= 200) {
+            existing.shift();
+          }
+          existing.push(note);
+
+          // 180-day TTL so truly stale conversations age out of KV instead
+          // of accumulating forever. Each fresh note extends the TTL via
+          // rewrite, so active restaurants keep their notes indefinitely.
+          await kv.put(key, JSON.stringify(existing), {
+            expirationTtl: 60 * 60 * 24 * 180,
+          });
+
+          // Verify our note actually made it through — KV is eventually
+          // consistent within a region but read-after-write of our own
+          // PUT is reliable on the same isolate. A missing note here
+          // means a concurrent writer overwrote our PUT.
+          const verify = await kv.get(key);
+          let landed = false;
+          if (verify) {
+            try {
+              const parsed = JSON.parse(verify);
+              if (Array.isArray(parsed)) {
+                landed = parsed.some(
+                  (n: PublicNote) =>
+                    n.ts === note.ts && n.text === note.text && n.name === note.name
+                );
+              }
+            } catch {
+              landed = false;
+            }
+          }
+          return { ok: landed, note, deduped: false };
+        }
+
+        let result = await appendOnce();
+        if (!result.ok) {
+          // One retry with small jitter so two racers don't immediately
+          // collide again on the second pass.
+          await new Promise((r) => setTimeout(r, 25 + Math.random() * 75));
+          result = await appendOnce();
+          if (!result.ok) {
+            console.warn(
+              `[addPublicNote] note may have been lost to concurrent write on ${input.restaurantId}`
+            );
           }
         }
 
-        const mostRecent = existing[existing.length - 1];
-        if (
-          mostRecent &&
-          mostRecent.text === note.text &&
-          mostRecent.name === note.name &&
-          note.ts - mostRecent.ts < 60_000
-        ) {
-          // Duplicate submission within 60s — treat as success without double-writing.
-          return { success: true, note: mostRecent, deduped: true };
+        // Surface the rate-limit budget via Hono's context. ctx.res.setHeader
+        // (Express style) is undefined in the Workers runtime — the prior
+        // call silently did nothing.
+        const honoCtx = (ctx as { c?: { header?: (k: string, v: string) => void } })
+          .c;
+        if (honoCtx?.header) {
+          honoCtx.header("X-RateLimit-Remaining", String(rl.remaining));
         }
 
-        if (existing.length >= 200) {
-          existing.shift();
-        }
-        existing.push(note);
-
-        // 180-day TTL so truly stale conversations age out of KV instead
-        // of accumulating forever. Each fresh note extends the TTL via
-        // rewrite, so active restaurants keep their notes indefinitely.
-        await kv.put(key, JSON.stringify(existing), {
-          expirationTtl: 60 * 60 * 24 * 180,
-        });
-
-        return { success: true, note, deduped: false };
+        return { success: true, note: result.note, deduped: result.deduped };
       }),
 
     /**

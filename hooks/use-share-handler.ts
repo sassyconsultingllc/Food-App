@@ -30,17 +30,41 @@ async function getDeviceId(): Promise<string> {
 }
 
 /**
- * Check if a URL is a Google Maps restaurant link
+ * Check if a URL is a Google Maps restaurant link.
+ *
+ * Defense in depth: the worker re-validates with parsed-hostname checks
+ * before doing anything with the URL, but rejecting obvious non-matches
+ * here saves a round-trip and makes the client-side intent explicit.
+ *
+ * Requirements:
+ *   - https:// only (http would otherwise be a downgrade attack)
+ *   - hostname must be one of the Google Maps domains (exact match), not a
+ *     substring — `http://attacker.com/?x=maps.google.com` used to pass
  */
+const ALLOWED_GMAPS_HOSTS = new Set([
+  "maps.google.com",
+  "www.google.com",
+  "google.com",
+  "goo.gl",
+  "maps.app.goo.gl",
+]);
+
 function isGoogleMapsUrl(url: string): boolean {
-  const googleMapsPatterns = [
-    /maps\.google\.com/,
-    /google\.com\/maps/,
-    /goo\.gl\/maps/,
-    /maps\.app\.goo\.gl/,
-  ];
-  
-  return googleMapsPatterns.some(pattern => pattern.test(url));
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:") return false;
+  const host = parsed.hostname.toLowerCase();
+  if (!ALLOWED_GMAPS_HOSTS.has(host)) return false;
+  // google.com / www.google.com only counts when the path is /maps. The
+  // shorteners count anywhere on their host.
+  if (host === "google.com" || host === "www.google.com") {
+    return parsed.pathname.startsWith("/maps");
+  }
+  return true;
 }
 
 /**
@@ -54,9 +78,12 @@ function extractUrlFromText(text: string): string | null {
 
 interface ShareHandlerResult {
   isProcessing: boolean;
+  // Server returns string IDs (e.g. "google_ChIJ...") — the previous
+  // `number` type caused silent runtime mismatches when navigation
+  // params were typed against this shape.
   lastImportedRestaurant: {
     name: string;
-    id: number;
+    id: string;
   } | null;
   error: string | null;
 }
@@ -65,7 +92,7 @@ export function useShareHandler(): ShareHandlerResult {
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastImportedRestaurant, setLastImportedRestaurant] = useState<{
     name: string;
-    id: number;
+    id: string;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -92,10 +119,15 @@ export function useShareHandler(): ShareHandlerResult {
       });
 
       if (result.success && result.restaurant) {
+        // Coerce to string so consumers can rely on the typed ID even if
+        // the server ever returns a numeric form for legacy entries.
         setLastImportedRestaurant({
           name: result.restaurant.name,
-          id: result.restaurantId!,
+          id: String(result.restaurantId),
         });
+        // Clear any stale error from a prior failed import so the banner
+        // doesn't linger after a successful one.
+        setError(null);
 
         Alert.alert(
           "Added to Favorites! 🎉",

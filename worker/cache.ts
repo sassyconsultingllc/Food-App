@@ -63,10 +63,16 @@ export async function initCacheTables(db: D1Database): Promise<void> {
  */
 export async function isPostalCodeCached(db: D1Database, cacheKey: string): Promise<boolean> {
   try {
+    // Compare against an ISO string we generate (not datetime('now')) so the
+    // lexicographic compare matches the format used for writes (ISO 8601 with
+    // 'T' separator). Using datetime('now') would produce a SQLite-format
+    // string with a space separator, which sorts BEFORE the 'T' for the same
+    // moment and silently extends cache lifetime by ~1 day.
+    const nowIso = new Date().toISOString();
     const result = await db.prepare(
-      `SELECT expires_at FROM postal_cache WHERE cache_key = ? AND expires_at > datetime('now')`
-    ).bind(cacheKey).first<{ expires_at: string }>();
-    
+      `SELECT expires_at FROM postal_cache WHERE cache_key = ? AND expires_at > ?`
+    ).bind(cacheKey, nowIso).first<{ expires_at: string }>();
+
     return !!result;
   } catch (e) {
     console.error("[Cache] isPostalCodeCached error:", e);
@@ -154,15 +160,18 @@ export async function cacheRestaurants(
   sources: string[]
 ): Promise<void> {
   if (restaurants.length === 0) return;
-  
+
   try {
     const now = new Date().toISOString();
     const expiresAt = new Date(Date.now() + CACHE_TTL_HOURS * 60 * 60 * 1000).toISOString();
     const { postalCode, countryCode } = parseCacheKey(cacheKey);
     const continent = getContinent(countryCode);
-    
-    // Upsert postal_cache entry
-    await db.prepare(`
+
+    // Build a single atomic batch: postal_cache upsert + restaurant_cache
+    // delete + restaurant_cache inserts. db.batch() runs as one D1 transaction
+    // so concurrent calls for the same cacheKey can't interleave a delete
+    // between another caller's insert and read.
+    const upsertPostal = db.prepare(`
       INSERT INTO postal_cache (cache_key, postal_code, country_code, continent, cached_at, expires_at, sources, restaurant_count)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(cache_key) DO UPDATE SET
@@ -170,19 +179,16 @@ export async function cacheRestaurants(
         expires_at = excluded.expires_at,
         sources = excluded.sources,
         restaurant_count = excluded.restaurant_count
-    `).bind(cacheKey, postalCode, countryCode || null, continent, now, expiresAt, JSON.stringify(sources), restaurants.length).run();
-    
-    // Delete old restaurants for this cache key
-    await db.prepare(`DELETE FROM restaurant_cache WHERE cache_key = ?`).bind(cacheKey).run();
-    
-    // Batch insert restaurants
-    const stmt = db.prepare(`
+    `).bind(cacheKey, postalCode, countryCode || null, continent, now, expiresAt, JSON.stringify(sources), restaurants.length);
+
+    const deleteOld = db.prepare(`DELETE FROM restaurant_cache WHERE cache_key = ?`).bind(cacheKey);
+
+    const insertStmt = db.prepare(`
       INSERT INTO restaurant_cache (id, cache_key, source_id, name, country_code, data, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
-    
-    const batch = restaurants.map(r => 
-      stmt.bind(
+    const inserts = restaurants.map(r =>
+      insertStmt.bind(
         r.id,
         cacheKey,
         r.sources?.[0] ? `${r.sources[0]}_${r.id}` : r.id,
@@ -192,14 +198,25 @@ export async function cacheRestaurants(
         now
       )
     );
-    
-    // D1 batch limit is 100, so chunk if needed
+
+    // D1 batch limit is 100. Pack the upsert+delete with the first chunk so
+    // the table is never observed empty between delete and insert.
     const chunkSize = 100;
-    for (let i = 0; i < batch.length; i += chunkSize) {
-      const chunk = batch.slice(i, i + chunkSize);
-      await db.batch(chunk);
+    if (inserts.length === 0) {
+      await db.batch([upsertPostal, deleteOld]);
+    } else {
+      // First batch: upsert + delete + first (chunkSize - 2) inserts
+      const firstChunkSize = Math.min(inserts.length, chunkSize - 2);
+      const firstChunk = inserts.slice(0, firstChunkSize);
+      await db.batch([upsertPostal, deleteOld, ...firstChunk]);
+
+      // Remaining inserts in subsequent batches
+      for (let i = firstChunkSize; i < inserts.length; i += chunkSize) {
+        const chunk = inserts.slice(i, i + chunkSize);
+        await db.batch(chunk);
+      }
     }
-    
+
     console.log(`[Cache] Cached ${restaurants.length} restaurants for ${cacheKey}`);
   } catch (e) {
     console.error("[Cache] cacheRestaurants error:", e);
@@ -217,29 +234,34 @@ export async function getCacheStats(db: D1Database): Promise<{
   byContinent?: Record<string, number>;
 }> {
   try {
+    // Use ISO timestamp to match the format used when writing expires_at.
+    // datetime('now') would produce a SQLite-format string with a space
+    // separator that doesn't sort consistently against ISO 'T' strings.
+    const nowIso = new Date().toISOString();
+
     // Get basic counts
     const postalCount = await db.prepare(
-      `SELECT COUNT(*) as count FROM postal_cache WHERE expires_at > datetime('now')`
-    ).first<{ count: number }>();
-    
+      `SELECT COUNT(*) as count FROM postal_cache WHERE expires_at > ?`
+    ).bind(nowIso).first<{ count: number }>();
+
     const restaurantCount = await db.prepare(
       `SELECT COUNT(*) as count FROM restaurant_cache`
     ).first<{ count: number }>();
-    
+
     const oldest = await db.prepare(
       `SELECT cached_at FROM postal_cache ORDER BY cached_at ASC LIMIT 1`
     ).first<{ cached_at: string }>();
-    
+
     const newest = await db.prepare(
       `SELECT cached_at FROM postal_cache ORDER BY cached_at DESC LIMIT 1`
     ).first<{ cached_at: string }>();
-    
+
     // Get breakdown by continent
     const continentResults = await db.prepare(
-      `SELECT continent, COUNT(*) as count FROM postal_cache 
-       WHERE expires_at > datetime('now') AND continent IS NOT NULL
+      `SELECT continent, COUNT(*) as count FROM postal_cache
+       WHERE expires_at > ? AND continent IS NOT NULL
        GROUP BY continent`
-    ).all<{ continent: string; count: number }>();
+    ).bind(nowIso).all<{ continent: string; count: number }>();
     
     const byContinent: Record<string, number> = {};
     if (continentResults.results) {
@@ -331,19 +353,23 @@ export async function getRestaurantsByContinent(
  */
 export async function cleanupExpiredCache(db: D1Database): Promise<number> {
   try {
+    // Use ISO format to match how expires_at is stored. datetime('now')
+    // produces a different separator and breaks lexicographic comparison.
+    const nowIso = new Date().toISOString();
+
     // First delete restaurants for expired postal codes
     await db.prepare(`
-      DELETE FROM restaurant_cache 
+      DELETE FROM restaurant_cache
       WHERE cache_key IN (
-        SELECT cache_key FROM postal_cache WHERE expires_at <= datetime('now')
+        SELECT cache_key FROM postal_cache WHERE expires_at <= ?
       )
-    `).run();
-    
+    `).bind(nowIso).run();
+
     // Then delete the expired postal codes
     const result = await db.prepare(
-      `DELETE FROM postal_cache WHERE expires_at <= datetime('now')`
-    ).run();
-    
+      `DELETE FROM postal_cache WHERE expires_at <= ?`
+    ).bind(nowIso).run();
+
     const deleted = result.meta?.changes || 0;
     console.log(`[Cache] Cleaned up ${deleted} expired cache entries`);
     return deleted;

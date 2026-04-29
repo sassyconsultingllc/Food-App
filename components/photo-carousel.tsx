@@ -123,7 +123,11 @@ export function PhotoCarousel({ photos, restaurantName }: PhotoCarouselProps) {
         ref={flatListRef}
         data={photos}
         renderItem={renderPhoto}
-        keyExtractor={(item, index) => `photo-${index}`}
+        // Use the photo URL as the key. Index-based keys cause React to
+        // recycle the wrong Image instance when the photos array changes
+        // (re-fetch reorders, server returns new URLs), producing a brief
+        // flicker of the previous photo.
+        keyExtractor={(item, index) => item || `photo-${index}`}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
@@ -184,7 +188,7 @@ export function PhotoCarousel({ photos, restaurantName }: PhotoCarouselProps) {
             ref={fullscreenListRef}
             data={photos}
             renderItem={renderFullscreenPhoto}
-            keyExtractor={(item, index) => `fullscreen-${index}`}
+            keyExtractor={(item, index) => item ? `fullscreen-${item}` : `fullscreen-${index}`}
             horizontal
             pagingEnabled
             showsHorizontalScrollIndicator={false}

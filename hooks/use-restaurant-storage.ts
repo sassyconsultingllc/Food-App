@@ -475,23 +475,40 @@ export function useRestaurantStorage() {
     setCurrentSearchParams({ zipCode, radius });
   }, []);
 
-  // Search restaurants with different parameters
+  // Search restaurants with different parameters.
+  //
+  // Important: this CANNOT synchronously return the new results. Updating
+  // currentSearchParams is async (setState), and the tRPC query that
+  // re-runs against those params lands on a future render. Returning
+  // `restaurants` here would hand the caller the *previous* search's data,
+  // which is the bug Mercury-2 caught. Callers should subscribe to the
+  // hook's `restaurants` value instead and re-render when it updates.
   const searchRestaurantsWithParams = useCallback(async (
     zipCode: string,
     radius: number,
-    cuisineType?: string
-  ): Promise<Restaurant[]> => {
-    // First update search parameters to trigger API call
-    await searchWithNewParams(zipCode, radius);
-    
-    // Then filter results if cuisine type specified
-    if (cuisineType) {
-      return restaurants.filter(r => 
-        r.cuisineType.toLowerCase().includes(cuisineType.toLowerCase())
-      );
-    }
-    return restaurants;
-  }, [restaurants, searchWithNewParams]);
+    _cuisineType?: string
+  ): Promise<void> => {
+    setRestaurantsError(null);
+    setCurrentSearchParams({ zipCode, radius });
+  // setCurrentSearchParams from context is referentially stable (it's a
+  // useState setter under the hood). Empty deps keeps this callback's
+  // identity stable across renders, which prevents downstream useEffects
+  // from re-firing on every parent render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Mirror of the latest favorites snapshot for the AppState backgrounding
+  // flush below. Updated synchronously alongside setFavoritesData so the
+  // backgrounding handler always sees the most recent intent even if the
+  // deferred InteractionManager write hasn't fired yet.
+  const latestFavoritesRef = useRef<Record<string, Restaurant>>(favoritesData);
+  useEffect(() => {
+    latestFavoritesRef.current = favoritesData;
+  }, [favoritesData]);
+
+  // Track whether there's a pending deferred favorites write so the
+  // AppState handler knows to flush on background.
+  const favoritesPendingWriteRef = useRef(false);
 
   // Toggle favorite status.
   // Accepts either a full Restaurant (preferred — persists a snapshot so the
@@ -546,11 +563,23 @@ export function useRestaurantStorage() {
     // directly causes tap latency if it happens inline.
     if (nextDataForWrite) {
       const snapshot = nextDataForWrite;
+      latestFavoritesRef.current = snapshot;
+      favoritesPendingWriteRef.current = true;
       InteractionManager.runAfterInteractions(() => {
         AsyncStorage.setItem(
           STORAGE_KEYS.FAVORITES_DATA,
           JSON.stringify(snapshot)
-        ).catch((e) => console.error("Error persisting favorites:", e));
+        )
+          .then(() => {
+            // Only clear the pending flag if the snapshot we just persisted
+            // is still the latest. If a newer toggle happened between the
+            // schedule and now, leave the flag set so the next flush still
+            // runs.
+            if (latestFavoritesRef.current === snapshot) {
+              favoritesPendingWriteRef.current = false;
+            }
+          })
+          .catch((e) => console.error("Error persisting favorites:", e));
         savePreferences({ favorites: Object.keys(snapshot) }).catch((e) =>
           console.error("Error saving favorites pref:", e)
         );
@@ -558,10 +587,42 @@ export function useRestaurantStorage() {
     }
   }, [restaurants, savePreferences]);
 
-  // Check if restaurant is favorite
+  // Flush any pending favorites write when the app leaves the foreground or
+  // the hook unmounts. Without this, a force-kill or rapid background while
+  // InteractionManager is still queued would lose the toggle silently —
+  // exactly the data-loss case Mercury-2 flagged.
+  useEffect(() => {
+    const flushFavorites = () => {
+      if (!favoritesPendingWriteRef.current) return;
+      const snapshot = latestFavoritesRef.current;
+      AsyncStorage.setItem(
+        STORAGE_KEYS.FAVORITES_DATA,
+        JSON.stringify(snapshot)
+      )
+        .then(() => {
+          favoritesPendingWriteRef.current = false;
+        })
+        .catch((e) => console.error("Error flushing favorites on bg:", e));
+    };
+
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state !== "active") flushFavorites();
+    });
+    return () => {
+      sub.remove();
+      flushFavorites();
+    };
+  }, []);
+
+  // Check if restaurant is favorite.
+  // Read from `favoritesData` (the source of truth) rather than
+  // `preferences.favorites` — the latter lags by one render after a
+  // toggle because preferences is only synced inside the
+  // InteractionManager.runAfterInteractions deferred write. Reading from
+  // favoritesData is O(1) and always reflects the most recent toggle.
   const isFavorite = useCallback((restaurantId: string) => {
-    return preferences.favorites.includes(restaurantId);
-  }, [preferences.favorites]);
+    return !!favoritesData[restaurantId];
+  }, [favoritesData]);
 
   // Get restaurants with distance calculated from user coordinates
   const getRestaurantsWithDistance = useCallback((coords?: { lat: number; lon: number } | null): Restaurant[] => {

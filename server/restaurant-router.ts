@@ -210,25 +210,27 @@ export const restaurantRouter = router({
       
       // Cache miss or force refresh - hit the APIs
       console.log(`[Router] Cache miss for ${cacheKey}, fetching from APIs`);
-      
-      // Local dev only supports US ZIP codes for now
-      if (!postalCode.match(/^\d{5}$/)) {
-        console.warn(`[Router] International postal codes require production Worker. Got: ${postalCode}`);
-        return [];
-      }
-      
+
+      // The scraper supports international postal codes via countryCode
+      // (see ScrapeOptions). Pass through directly — the prior guard returned
+      // [] silently for any non-US ZIP, which broke the documented
+      // INTERNATIONAL search advertised by the worker.
       const restaurants = await scrapeRestaurantsByLocation({
-        zipCode: postalCode,
+        postalCode,
+        countryCode: effectiveCountry,
         radius,
         cuisineType,
-        limit: Math.max(limit, 50),
+        // Over-fetch only when cuisineType filtering is requested so the
+        // post-filter slice still returns roughly `limit` items. With no
+        // filter, honor the client's limit exactly to avoid quota waste.
+        limit: cuisineType ? Math.max(limit, 50) : limit,
       });
-      
+
       if (restaurants.length > 0) {
         const sourcesUsed = [...new Set(restaurants.flatMap(r => r.sources))];
         await cacheRestaurants(postalCode, restaurants, sourcesUsed);
       }
-      
+
       return restaurants.slice(0, limit);
     }),
 

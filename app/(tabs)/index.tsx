@@ -230,11 +230,18 @@ export default function HomeScreen() {
     return filtered;
   }, [restaurants, locationLat, locationLon, radius, filters, getRecentlyPickedIds]);
 
-  // Handle GPS location
+  // Handle GPS location. Wrap in try/catch as defense in depth — the
+  // useLocation hook already swallows errors into its own `error` state,
+  // but a future refactor could re-throw and we don't want an unhandled
+  // rejection on the app root.
   const handleUseMyLocation = useCallback(async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await getCurrentLocation();
-    // Location state will update via the hook - effect below handles the search
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await getCurrentLocation();
+      // Location state will update via the hook - effect below handles the search
+    } catch (err) {
+      console.warn("[HomeScreen] handleUseMyLocation failed:", err);
+    }
   }, [getCurrentLocation]);
 
   // Handle spin start
@@ -261,25 +268,52 @@ export default function HomeScreen() {
     addToHistory(restaurant.id, restaurant.name);
   }, [addToHistory]);
 
+  // Debounce zip + radius searches so a fast typist or someone tapping +/-
+  // repeatedly doesn't fire one tRPC search per keystroke. The previous
+  // behavior could fan out into a dozen overlapping requests, blowing
+  // Google Places quota and producing out-of-order UI updates.
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const SEARCH_DEBOUNCE_MS = 400;
+
+  const debouncedSearch = useCallback(
+    (zip: string, r: number) => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = setTimeout(() => {
+        searchDebounceRef.current = null;
+        if (isValidPostalCode(zip)) {
+          searchWithNewParams(zip, r);
+        }
+      }, SEARCH_DEBOUNCE_MS);
+    },
+    [searchWithNewParams]
+  );
+
+  // Flush any pending debounced search on unmount so a screen swap during
+  // typing doesn't leave a setTimeout pinned to a dead component.
+  useEffect(() => {
+    return () => {
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+        searchDebounceRef.current = null;
+      }
+    };
+  }, []);
+
   const handleRadiusChange = (delta: number) => {
     const newRadius = Math.max(1, Math.min(25, radius + delta));
     setRadius(newRadius);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
-    // Trigger new search when radius changes
-    if (isValidPostalCode(zipCode)) {
-      searchWithNewParams(zipCode, newRadius);
-    }
+
+    // Debounced — rapid +/- taps coalesce into one search.
+    debouncedSearch(zipCode, newRadius);
   };
 
   const handleZipCodeChange = (text: string) => {
     setZipCode(text);
     setLocationName(null);
 
-    // Trigger search when a valid postal code is entered
-    if (isValidPostalCode(text)) {
-      searchWithNewParams(text, radius);
-    }
+    // Debounced — typing "12345" no longer fires 5 searches.
+    debouncedSearch(text, radius);
   };
 
   return (

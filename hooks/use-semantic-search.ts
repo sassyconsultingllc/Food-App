@@ -5,7 +5,7 @@
  * AI-powered natural language restaurant discovery
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { trpc } from '@/lib/trpc';
 import { Restaurant } from '../types/restaurant';
 
@@ -64,12 +64,33 @@ export function useSemanticSearch(options: UseSemanticSearchOptions = {}) {
     }
   }, [searchQuery.data, searchQuery.error]);
 
+  // Debounce input by 300ms so a fast typist doesn't fire a tRPC request per
+  // keystroke. React Query already keys by the query string and will only
+  // surface data for the latest key, but without debouncing we still pay
+  // the worker round-trip on every character.
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const search = useCallback((searchQuery: string) => {
     setError(null);
-    setQuery(searchQuery);
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => {
+      setQuery(searchQuery);
+    }, 300);
   }, []);
 
   const clear = useCallback(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
     setQuery('');
     setResults([]);
     setError(null);

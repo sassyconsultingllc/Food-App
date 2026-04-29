@@ -33,3 +33,18 @@ tools/
 
 expo-env.d.ts
 # @end expo-cli
+
+# EAS local cache
+.eas/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Mercury-2 audit working files — bundles are regenerable from source via
+# `python mercury_audit.py bundles`; reports are the LLM's output and stay
+# local for review. Commit only the script itself.
+audits/
+
+# Misc local screenshots
+foodie-screenshot-*.png

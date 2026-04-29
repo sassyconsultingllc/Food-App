@@ -81,7 +81,10 @@ export function SpinnerFiltersBar({
   
   const clearFilters = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    onFiltersChange(DEFAULT_FILTERS);
+    // Pass a fresh copy so a downstream consumer that mutates this object
+    // (e.g. setting openNow = true on the received reference) can't corrupt
+    // the shared DEFAULT_FILTERS constant for every other consumer.
+    onFiltersChange({ ...DEFAULT_FILTERS, cuisineTypes: [], priceRanges: [] });
   }, [onFiltersChange]);
   
   return (
