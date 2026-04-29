@@ -73,7 +73,14 @@ function FavoriteItem({
   return (
     <View style={[styles.favoriteItem, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
       {/* Collapsed Row */}
-      <Pressable onPress={onToggleExpand} style={styles.favoriteHeader}>
+      <Pressable
+        onPress={onToggleExpand}
+        style={styles.favoriteHeader}
+        accessibilityRole="button"
+        accessibilityLabel={`${restaurant.name}, ${isExpanded ? "expanded" : "collapsed"}`}
+        accessibilityHint={isExpanded ? "Hides restaurant details" : "Shows restaurant details"}
+        accessibilityState={{ expanded: isExpanded }}
+      >
         <IconSymbol
           name="fork.knife.circle.fill"
           size={22}

@@ -304,15 +304,21 @@ export default function HomeScreen() {
     setRadius(newRadius);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-    // Debounced — rapid +/- taps coalesce into one search.
-    debouncedSearch(zipCode, newRadius);
+    // Don't fire a search if there's no zip yet — debouncedSearch already
+    // re-validates inside the timer, but skipping the schedule entirely
+    // avoids the ~400ms phantom-pending state in the UI.
+    if (zipCode && isValidPostalCode(zipCode)) {
+      debouncedSearch(zipCode, newRadius);
+    }
   };
 
   const handleZipCodeChange = (text: string) => {
     setZipCode(text);
     setLocationName(null);
 
-    // Debounced — typing "12345" no longer fires 5 searches.
+    // Debounced — typing "12345" no longer fires 5 searches. The
+    // validity check inside debouncedSearch's timer handles the
+    // partial-input case (e.g. user halfway through typing).
     debouncedSearch(text, radius);
   };
 
@@ -337,10 +343,15 @@ export default function HomeScreen() {
             style={[styles.input, { color: colors.text }]}
             value={zipCode}
             onChangeText={handleZipCodeChange}
-            placeholder="Zip code"
+            placeholder="Zip / postal code"
             placeholderTextColor={colors.textSecondary}
             keyboardType="default"
-            maxLength={10}
+            // International postal codes need room: UK "SW1A 1AA" is 8
+            // chars including the space, BR "01310-100" is 9, NL
+            // "1234 AB" is 7. The previous 10-char cap silently
+            // truncated valid intl codes. 12 covers all real-world
+            // formats with a small safety margin.
+            maxLength={12}
             autoCapitalize="characters"
           />
         </View>

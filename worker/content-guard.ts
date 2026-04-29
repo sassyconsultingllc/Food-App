@@ -16,6 +16,15 @@ import type { KVNamespace } from "@cloudflare/workers-types";
 // ALSO produces a "collapsed" variant with whitespace/punctuation removed.
 // That means patterns here only need to match the literal letter run — the
 // normalizer handles "f u c k", "f.u.c.k", "fvck", and "ph" substitution.
+//
+// REDOS NOTE: a few patterns below have adjacent unbounded quantifiers
+// (e.g. /\bf+[uv\*@0]*c*k+/i). In isolation those COULD trigger
+// catastrophic backtracking on a long crafted string, but every code path
+// that calls guardPublicNote() runs after a Zod validator that enforces
+// text.max(500), and the function itself rejects raw.length > 500 below.
+// Worst-case work is therefore bounded at ~500 chars × N patterns, which
+// stays well under the worker's 30s CPU budget. If the input cap is ever
+// raised, audit these patterns first.
 const BLOCKED_PATTERNS: RegExp[] = [
   // Profanity — widened to catch fuk/fck/fvck/phuck family. Normalizer
   // already folded "ph" → "f" and "v" → "u" in the collapsed variant.

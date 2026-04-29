@@ -289,7 +289,12 @@ export function MenuSection({
             decelerationRate="fast"
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.carouselContent}
-            keyExtractor={(item, index) => `menu-${index}`}
+            // URL-based key. Index keys cause Image recycling to misfire
+            // when the photos array reorders or items get added/removed,
+            // visible as a flicker of the previous image.
+            keyExtractor={(item, index) =>
+              typeof item === "string" && item.length > 0 ? item : `menu-${index}`
+            }
             renderItem={({ item, index }) => (
               <Pressable onPress={() => openFullscreen(index)}>
                 <Image
@@ -390,7 +395,9 @@ export function MenuSection({
             showsHorizontalScrollIndicator={false}
             initialScrollIndex={fullscreenIndex}
             getItemLayout={(_, index) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index })}
-            keyExtractor={(_, index) => `fs-menu-${index}`}
+            keyExtractor={(item, index) =>
+              typeof item === "string" && item.length > 0 ? `fs-${item}` : `fs-menu-${index}`
+            }
             renderItem={({ item }) => (
               <View style={{ width: SCREEN_WIDTH, flex: 1, justifyContent: "center", alignItems: "center" }}>
                 <Image source={{ uri: item }} style={{ width: SCREEN_WIDTH, height: "100%" }} contentFit="contain" />

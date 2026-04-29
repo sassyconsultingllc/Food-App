@@ -15,9 +15,42 @@ export const publicProcedure = t.procedure;
 // would be better but this server already runs in a single-process Node
 // context for admin work, and a Map is enough to make a brute-force loud
 // in logs and noisy enough that an attacker would notice.
+//
+// Memory bound: the per-window filter inside checkAdminRate drops stale
+// timestamps but the Map keys themselves accumulate forever. A periodic
+// sweep below evicts client entries whose stamp lists have aged out.
+// Without this, an attacker rotating IPs could grow the Map without
+// bound and OOM the server.
 const ADMIN_RATE_WINDOW_MS = 60_000;
 const ADMIN_RATE_MAX = 30;
+const ADMIN_LOG_SWEEP_MS = 5 * 60_000; // every 5 minutes
 const adminAttemptLog = new Map<string, number[]>();
+
+// Lazy-initialized sweep timer. We don't start it at module load because
+// that pins the event loop in test environments; the first checkAdminRate
+// call kicks it off, and on Node 20+ unref() lets the process still exit.
+// Typed as `unknown` so the same source compiles under both DOM (number)
+// and Node (NodeJS.Timeout) `lib` settings.
+let sweepTimer: ReturnType<typeof setInterval> | null = null;
+function ensureSweepTimer() {
+  if (sweepTimer) return;
+  const handle = setInterval(() => {
+    const now = Date.now();
+    for (const [client, stamps] of adminAttemptLog) {
+      const fresh = stamps.filter((ts) => now - ts < ADMIN_RATE_WINDOW_MS);
+      if (fresh.length === 0) {
+        adminAttemptLog.delete(client);
+      } else if (fresh.length !== stamps.length) {
+        adminAttemptLog.set(client, fresh);
+      }
+    }
+  }, ADMIN_LOG_SWEEP_MS);
+  sweepTimer = handle;
+  // Don't keep the process alive solely for the sweep. unref() is Node-
+  // only — the DOM type doesn't expose it. Probe defensively.
+  const maybeUnref = (handle as { unref?: () => void }).unref;
+  if (typeof maybeUnref === "function") maybeUnref.call(handle);
+}
 
 function adminClientKey(ctx: TrpcContext): string {
   // Trust the first XFF entry only when the proxy is configured to set it
@@ -29,6 +62,7 @@ function adminClientKey(ctx: TrpcContext): string {
 }
 
 function checkAdminRate(client: string): { allowed: boolean; remaining: number } {
+  ensureSweepTimer();
   const now = Date.now();
   const stamps = (adminAttemptLog.get(client) || []).filter(
     (ts) => now - ts < ADMIN_RATE_WINDOW_MS

@@ -10,6 +10,7 @@ import * as Linking from "expo-linking";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   ScrollView,
@@ -58,12 +59,22 @@ function isSafeExternalUrl(url: string | null | undefined): url is string {
 async function safeOpenUrl(url: string | null | undefined): Promise<void> {
   if (!isSafeExternalUrl(url)) {
     console.warn("[restaurant-detail] refusing to open unsafe URL:", url);
+    Alert.alert(
+      "Can't open this link",
+      "The link looks invalid or uses a scheme we don't support. Restaurant data sometimes contains broken or unsafe URLs — try copying the address into your browser instead.",
+      [{ text: "OK" }]
+    );
     return;
   }
   try {
     await Linking.openURL(url);
   } catch (e) {
     console.warn("[restaurant-detail] Linking.openURL failed:", e);
+    Alert.alert(
+      "Couldn't open link",
+      "Your device couldn't open this link. The app or browser to handle it may not be installed.",
+      [{ text: "OK" }]
+    );
   }
 }
 
@@ -595,15 +606,21 @@ export default function RestaurantDetailScreen() {
               </View>
             ) : (
               <View style={styles.similarList}>
-                {similarResults.map((result) => {
+                {similarResults.map((result, idx) => {
                   const similarRestaurant = result.restaurant || getRestaurantById(result.id);
                   if (!similarRestaurant) return null;
-                  
+
                   return (
                     <Pressable
-                      key={result.id}
+                      // Compose with index so a duplicate id from the AI
+                      // service can't collapse two distinct cards into one
+                      // via React reconciliation.
+                      key={`${result.id}-${idx}`}
                       onPress={() => handleSimilarPress(result.id)}
                       style={[styles.similarItem, { borderBottomColor: colors.border }]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`View details for ${similarRestaurant.name}`}
+                      accessibilityHint={`${similarRestaurant.cuisineType}${similarRestaurant.priceRange ? `, ${similarRestaurant.priceRange}` : ""}`}
                     >
                       {(similarRestaurant.imageUrl || similarRestaurant.photos?.[0]) ? (
                         <Image

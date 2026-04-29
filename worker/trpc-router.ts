@@ -934,16 +934,18 @@ export const appRouter = router({
           }
         }
 
-        // Surface the rate-limit budget via Hono's context. ctx.res.setHeader
-        // (Express style) is undefined in the Workers runtime — the prior
-        // call silently did nothing.
-        const honoCtx = (ctx as { c?: { header?: (k: string, v: string) => void } })
-          .c;
-        if (honoCtx?.header) {
-          honoCtx.header("X-RateLimit-Remaining", String(rl.remaining));
-        }
-
-        return { success: true, note: result.note, deduped: result.deduped };
+        // Return the rate-limit budget in the response body. Setting it
+        // as a response header doesn't work here — fetchRequestHandler
+        // builds its own Response and Hono can't decorate it after the
+        // fact, so any c.header() / ctx.res.setHeader() call would be a
+        // no-op. The client already reads { success, note, deduped },
+        // adding rateLimitRemaining there is the cheapest channel.
+        return {
+          success: true,
+          note: result.note,
+          deduped: result.deduped,
+          rateLimitRemaining: rl.remaining,
+        };
       }),
 
     /**

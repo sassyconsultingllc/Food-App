@@ -24,7 +24,6 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useRestaurantStorage } from "@/hooks/use-restaurant-storage";
 import { useRecentlyViewed } from "@/hooks/use-recently-viewed";
 import { useTheme } from "@/contexts/theme-context";
-import { getApiBaseUrl } from '@/constants/oauth';
 import { isValidPostalCode } from '@/utils/geo-service';
 
 export default function SettingsScreen() {
@@ -103,7 +102,9 @@ export default function SettingsScreen() {
                 placeholder="Enter postal code (e.g., 12345, SW1A 0AA)"
                 placeholderTextColor={colors.textSecondary}
                 keyboardType="default"
-                maxLength={10}
+                // 12 chars accommodates international postal codes like
+                // "SW1A 1AA" (UK), "01310-100" (BR), "K1A 0B1" (CA).
+                maxLength={12}
                 accessibilityLabel="Default postal code"
                 accessibilityHint="Enter your postal code for restaurant searches"
               />

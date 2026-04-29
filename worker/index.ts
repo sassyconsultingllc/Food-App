@@ -327,19 +327,81 @@ app.post("/api/vision/classify", async (c) => {
   // Also parse each URL and reject anything that isn't http(s) or that's
   // absurdly long — the URL becomes part of a KV key (`vision:${url}`) so
   // we don't want callers stuffing arbitrary strings into the keyspace.
+  //
+  // SSRF gate: also reject private IP ranges, localhost, and the well-known
+  // cloud metadata endpoint. Without this, a caller could feed a URL like
+  // http://169.254.169.254/latest/meta-data/ and have the worker fetch it
+  // as a reconnaissance probe. Hostname-form rejection covers the obvious
+  // cases; full DNS-resolution rejection isn't possible from within the
+  // worker runtime (no DNS API), but the worker only fetches public CDN
+  // image URLs in practice — restricting to the known photo-host suffix
+  // list locks this down further. Anything outside the allowlist below
+  // is rejected.
+  const PHOTO_HOST_ALLOWLIST = [
+    "googleusercontent.com",       // Google Places photos
+    "ggpht.com",                   // Google legacy
+    "fastly.4sqi.net",             // Foursquare
+    "fp.4sqi.net",                 // Foursquare
+    "media.foursquare.com",
+    "ls.hereapi.com",              // HERE
+    "image.maps.ls.hereapi.com",   // HERE
+    "static.openstreetmap.org",    // OSM
+    "cdn.culvers.com",             // Culver's
+    "www.culvers.com",
+    "culvers.com",
+  ];
+  // Rejected exact hostnames (literals) — block obvious local/private hosts.
+  // The CIDR check below catches ranges; this catches well-known names.
+  const HOST_BLOCKLIST = new Set([
+    "localhost",
+    "ip6-localhost",
+    "ip6-loopback",
+    "metadata.google.internal",
+  ]);
+  function isPrivateOrLoopbackHost(host: string): boolean {
+    if (HOST_BLOCKLIST.has(host)) return true;
+    // IPv4 literal? Reject 10/8, 172.16/12, 192.168/16, 127/8, 169.254/16, 0/8
+    const ipv4 = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+    if (ipv4) {
+      const a = +ipv4[1], b = +ipv4[2];
+      if (a === 10) return true;
+      if (a === 127) return true;
+      if (a === 0) return true;
+      if (a === 169 && b === 254) return true;
+      if (a === 192 && b === 168) return true;
+      if (a === 172 && b >= 16 && b <= 31) return true;
+      return false;
+    }
+    // IPv6 literal — Hono parses [::1] as host "::1"
+    if (host.includes(":")) {
+      const lower = host.toLowerCase();
+      if (lower === "::1" || lower.startsWith("fc") || lower.startsWith("fd")) return true;
+      if (lower.startsWith("fe80")) return true;
+    }
+    return false;
+  }
+  function isAllowedPhotoUrl(u: string): boolean {
+    let parsed: URL;
+    try {
+      parsed = new URL(u);
+    } catch {
+      return false;
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    const host = parsed.hostname.toLowerCase();
+    if (isPrivateOrLoopbackHost(host)) return false;
+    // Exact match or subdomain match against the allowlist.
+    return PHOTO_HOST_ALLOWLIST.some(
+      (allowed) => host === allowed || host.endsWith(`.${allowed}`)
+    );
+  }
+
   const urls = body.urls
     .filter((u): u is string => typeof u === "string" && u.length > 0 && u.length <= 512)
-    .filter((u) => {
-      try {
-        const parsed = new URL(u);
-        return parsed.protocol === "http:" || parsed.protocol === "https:";
-      } catch {
-        return false;
-      }
-    })
+    .filter(isAllowedPhotoUrl)
     .slice(0, 16);
   if (urls.length === 0) {
-    return c.json({ error: "urls must contain valid http(s) URLs" }, 400);
+    return c.json({ error: "urls must point to a known photo host" }, 400);
   }
 
   // Prefer the dedicated VISION_CACHE namespace when bound — falling back
@@ -386,15 +448,37 @@ app.post("/api/vision/classify", async (c) => {
         features: [{ type: "TEXT_DETECTION", maxResults: 1 }],
       })),
     };
-    const visionRes = await fetch(
-      `https://vision.googleapis.com/v1/images:annotate?key=${visionKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(reqBody),
-        signal: AbortSignal.timeout(10000),
-      }
-    );
+    // Pass the API key in X-goog-api-key (header) instead of ?key= (query
+    // string). Cloudflare's request analytics and any downstream proxy
+    // that logs URLs would have captured the key in the query — header
+    // form keeps it out of those records. Google Cloud Vision v1 accepts
+    // both forms.
+    let visionRes: Response;
+    try {
+      visionRes = await fetch(
+        "https://vision.googleapis.com/v1/images:annotate",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-goog-api-key": visionKey,
+          },
+          body: JSON.stringify(reqBody),
+          signal: AbortSignal.timeout(10000),
+        }
+      );
+    } catch (err) {
+      // AbortSignal.timeout() raises a TimeoutError (a DOMException).
+      // Without an explicit catch, an unhandled rejection here could
+      // bubble out and burn the rest of the 30 s CPU budget.
+      const isAbort =
+        (err as { name?: string })?.name === "AbortError" ||
+        (err as { name?: string })?.name === "TimeoutError";
+      console.warn(
+        `[vision] fetch ${isAbort ? "timeout" : "error"}: ${(err as Error)?.message ?? err}`
+      );
+      return c.json({ results, error: "Vision API unreachable" }, 502);
+    }
     if (!visionRes.ok) {
       // Return partial cached results on failure
       return c.json({ results, error: "Vision API error" }, 502);
@@ -659,53 +743,23 @@ app.post("/api/menu/:restaurantId/upload", async (c) => {
   }
 });
 
-// PATCH: Geocode (0,0) error handling
-const origGeocodeHandler = app.get.bind(app);
-app.get('/api/debug/geocode', async (c) => {
-  try {
-    const postalCode = c.req.query('postalCode') || c.req.query('zip') || '';
-    const countryCode = c.req.query('countryCode') || undefined;
+// (Removed duplicate /api/debug/geocode definition + dead `origGeocodeHandler`
+// alias. The route is defined once near the top of the file with the
+// (0,0) error guard already in place — the second copy here was a
+// leftover patch attempt that never wired itself in.)
 
-    if (!postalCode) return c.json({ ok: false, error: 'postalCode required' }, 400);
-
-    // Get the canonical coords using the scraper helper
-    const coords = await getCoords(postalCode as string, countryCode as string | undefined);
-
-    if (coords.lat === 0 && coords.lng === 0) {
-      return c.json({ ok: false, error: 'Geocoding failed', coords }, 400);
-    }
-
-    // Also fetch raw nominatim responses for both country-scoped and unrestricted
-    const buildUrl = (cc?: string) => {
-      const u = new URL('https://nominatim.openstreetmap.org/search');
-      u.searchParams.set('postalcode', postalCode as string);
-      u.searchParams.set('format', 'json');
-      u.searchParams.set('limit', '3');
-      u.searchParams.set('addressdetails', '1');
-      if (cc) u.searchParams.set('countrycodes', cc.toLowerCase());
-      return u.toString();
-    };
-
-    const countryScoped = countryCode ? await (await fetch(buildUrl(countryCode as string), { headers: { 'User-Agent': 'FoodieFinder/2.0 (Diagnostic)' } })).json() : null;
-    const usScoped = await (await fetch(buildUrl('US'), { headers: { 'User-Agent': 'FoodieFinder/2.0 (Diagnostic)' } })).json();
-    const unrestricted = await (await fetch(buildUrl(), { headers: { 'User-Agent': 'FoodieFinder/2.0 (Diagnostic)' } })).json();
-
-    return c.json({ ok: true, postalCode, countryCode: countryCode || null, coords, countryScoped, usScoped, unrestricted });
-  } catch (err) {
-    return c.json({ ok: false, error: String(err) }, 500);
-  }
-});
-
-// tRPC endpoint. Pass the Hono context through so procedures can set
-// response headers (e.g. X-RateLimit-Remaining). The previous shape only
-// exposed env+req, so any procedure that tried `ctx.res.setHeader(...)`
-// silently no-op'd in the Workers runtime.
+// tRPC endpoint. We DON'T pass the Hono `c` through anymore — earlier
+// rounds tried to use it to set response headers (e.g. X-RateLimit-
+// Remaining), but fetchRequestHandler builds its own Response and Hono
+// can't decorate it after the fact, so c.header() was a silent no-op.
+// Procedures that need to surface rate-limit info include it in the
+// response body instead.
 app.all("/api/trpc/*", async (c) => {
   return fetchRequestHandler({
     endpoint: "/api/trpc",
     req: c.req.raw,
     router: appRouter,
-    createContext: () => ({ env: c.env, req: c.req.raw, c }),
+    createContext: () => ({ env: c.env, req: c.req.raw }),
   });
 });
 

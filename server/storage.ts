@@ -60,6 +60,10 @@ function buildAuthHeaders(apiKey: string): HeadersInit {
   return { Authorization: `Bearer ${apiKey}` };
 }
 
+// Generous default — uploads can include menu photos up to several MB.
+// Override with STORAGE_TIMEOUT_MS for slower upstream environments.
+const STORAGE_TIMEOUT_MS = Number(process.env.STORAGE_TIMEOUT_MS) || 30_000;
+
 export async function storagePut(
   relKey: string,
   data: Buffer | Uint8Array | string,
@@ -69,11 +73,28 @@ export async function storagePut(
   const key = normalizeKey(relKey);
   const uploadUrl = buildUploadUrl(baseUrl, key);
   const formData = toFormData(data, contentType, key.split("/").pop() ?? key);
-  const response = await fetch(uploadUrl, {
-    method: "POST",
-    headers: buildAuthHeaders(apiKey),
-    body: formData,
-  });
+
+  // Without an AbortController, a hung upstream storage proxy ties up the
+  // request handler indefinitely and degrades server throughput under
+  // adverse network conditions.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), STORAGE_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(uploadUrl, {
+      method: "POST",
+      headers: buildAuthHeaders(apiKey),
+      body: formData,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if ((err as { name?: string })?.name === "AbortError") {
+      throw new Error(`Storage upload timed out after ${STORAGE_TIMEOUT_MS}ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!response.ok) {
     const message = await response.text().catch(() => response.statusText);
