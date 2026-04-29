@@ -46,15 +46,14 @@ id = "60b92d22885449588e7edeb401c1e66f"
 binding = "FOODIE_PUBLIC_NOTES"
 id = "f58d8de66b624373b3f316b839c7bfcf"
 
-# Optional: dedicated namespace for vision-classification results. The
-# worker falls back to RATE_LIMIT when this is absent (backward compat).
-# To enable, run:
-#   wrangler kv:namespace create VISION_CACHE
-#   wrangler kv:namespace create VISION_CACHE --preview
-# then uncomment the block below and paste the IDs.
-# [[kv_namespaces]]
-# binding = "VISION_CACHE"
-# id = "<paste production id here>"
+# Dedicated namespace for vision-classification results. Keeps the
+# (high-volume) vision cache from evicting rate-limit counters in
+# RATE_LIMIT. The worker prefers VISION_CACHE when present and falls
+# back to RATE_LIMIT for backward compat.
+[[kv_namespaces]]
+binding = "VISION_CACHE"
+id = "e877b50e6c7443698e0c8be6362e39b4"
+preview_id = "ed9cea80bd01428daa45d3356d028196"
 
 [vars]
 NODE_ENV = "production"
@@ -98,6 +97,10 @@ bucket_name = "foodie-finder-menus"
 binding = "FOODIE_PUBLIC_NOTES"
 id = "f58d8de66b624373b3f316b839c7bfcf"
 
+[[env.production.kv_namespaces]]
+binding = "VISION_CACHE"
+id = "e877b50e6c7443698e0c8be6362e39b4"
+
 # Top-level [vars] are NOT inherited by environments in wrangler — each
 # env must re-declare them or the prod worker gets no NODE_ENV/VITE_APP_ID.
 [env.production.vars]
@@ -134,6 +137,11 @@ bucket_name = "foodie-finder-menus"
 [[env.preview.kv_namespaces]]
 binding = "FOODIE_PUBLIC_NOTES"
 id = "f58d8de66b624373b3f316b839c7bfcf"
+
+[[env.preview.kv_namespaces]]
+binding = "VISION_CACHE"
+id = "e877b50e6c7443698e0c8be6362e39b4"
+preview_id = "ed9cea80bd01428daa45d3356d028196"
 
 [env.preview.vars]
 NODE_ENV = "preview"
