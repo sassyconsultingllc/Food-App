@@ -708,38 +708,236 @@ function mergeRestaurants(all: Partial<ScrapedRestaurant>[]): ScrapedRestaurant[
   return merged.sort((a, b) => b.ratings.aggregated - a.ratings.aggregated);
 }
 
+// =============================================================================
+// OpenStreetMap (Overpass) — keyless fallback
+// =============================================================================
+
+function formatOsmCuisine(cuisine?: string): string {
+  if (!cuisine) return 'Restaurant';
+  const first = cuisine.split(';')[0].trim();
+  return first.charAt(0).toUpperCase() + first.slice(1).replace(/_/g, ' ');
+}
+
+function parseOsmHours(hoursString?: string): Record<string, string> | undefined {
+  if (!hoursString) return undefined;
+  const out: Record<string, string> = {};
+  const dayMap: Record<string, string> = {
+    Mo: 'monday', Tu: 'tuesday', We: 'wednesday',
+    Th: 'thursday', Fr: 'friday', Sa: 'saturday', Su: 'sunday',
+  };
+  try {
+    for (const part of hoursString.split(';')) {
+      const m = part.trim().match(/^([A-Za-z,-]+)\s+(.+)$/);
+      if (!m) continue;
+      const [, days, time] = m;
+      const range = days.match(/(\w{2})-(\w{2})/);
+      if (range) {
+        const keys = Object.keys(dayMap);
+        const a = keys.indexOf(range[1]);
+        const b = keys.indexOf(range[2]);
+        if (a !== -1 && b !== -1) {
+          for (let i = a; i <= b; i++) out[dayMap[keys[i]]] = time;
+        }
+      } else {
+        const day = dayMap[days.substring(0, 2)];
+        if (day) out[day] = time;
+      }
+    }
+  } catch {
+    return undefined;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+async function fetchOpenStreetMap(
+  coords: GeoCoords,
+  radiusMeters: number,
+  cuisineType: string | undefined,
+  limit: number
+): Promise<Partial<ScrapedRestaurant>[]> {
+  try {
+    // Overpass QL — node + way coverage for restaurants, fast_food, and
+    // cafes that have a cuisine tag (filtering generic coffee shops out).
+    const cuisineFilter = cuisineType ? `["cuisine"~"${cuisineType}",i]` : '';
+    const query = `[out:json][timeout:20];(node["amenity"="restaurant"]${cuisineFilter}(around:${radiusMeters},${coords.lat},${coords.lng});node["amenity"="fast_food"]${cuisineFilter}(around:${radiusMeters},${coords.lat},${coords.lng});node["amenity"="cafe"]["cuisine"]${cuisineFilter}(around:${radiusMeters},${coords.lat},${coords.lng});way["amenity"="restaurant"]${cuisineFilter}(around:${radiusMeters},${coords.lat},${coords.lng});way["amenity"="fast_food"]${cuisineFilter}(around:${radiusMeters},${coords.lat},${coords.lng}););out center ${limit};`;
+
+    const response = await fetchWithTimeout(
+      'https://overpass-api.de/api/interpreter',
+      {
+        method: 'POST',
+        body: `data=${encodeURIComponent(query)}`,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'FoodieFinder/2.0 (contact@sassyconsultingllc.com)',
+        },
+      },
+      20_000
+    );
+    if (!response.ok) {
+      console.warn(`[Scraper] Overpass status ${response.status}`);
+      return [];
+    }
+    const data: any = await response.json();
+    const elements: any[] = data?.elements || [];
+
+    return elements.map((el) => {
+      const tags = el.tags || {};
+      const lat = el.lat ?? el.center?.lat;
+      const lng = el.lon ?? el.center?.lon;
+      const addressParts = [tags['addr:housenumber'], tags['addr:street']].filter(Boolean);
+      const externalUrls = generateExternalUrls(
+        tags.name || 'Unknown',
+        addressParts.join(' ') || '',
+        tags['addr:city'] || '',
+        tags['addr:state'] || '',
+        tags['addr:country'] || '',
+        lat ?? 0,
+        lng ?? 0
+      );
+      return {
+        id: `osm_${el.type}_${el.id}`,
+        name: tags.name || 'Unknown Restaurant',
+        address: addressParts.join(' ') || tags['addr:full'] || '',
+        city: tags['addr:city'] || '',
+        state: tags['addr:state'] || '',
+        zipCode: tags['addr:postcode'] || '',
+        postalCode: tags['addr:postcode'] || '',
+        latitude: lat,
+        longitude: lng,
+        phone: tags.phone || tags['contact:phone'],
+        website: tags.website || tags['contact:website'],
+        priceRange: tags.price_range,
+        cuisineType:
+          formatOsmCuisine(tags.cuisine) ||
+          (tags.amenity === 'fast_food' ? 'Fast Food' : 'Restaurant'),
+        categories: tags.cuisine ? tags.cuisine.split(';').map((c: string) => c.trim()) : [],
+        hours: parseOsmHours(tags.opening_hours),
+        ratings: { aggregated: 0, totalReviews: 0 },
+        sources: ['openstreetmap'],
+        yelpUrl: externalUrls.yelpUrl,
+        googleMapsUrl: externalUrls.googleMapsUrl,
+        doordashUrl: externalUrls.doordashUrl,
+        ubereatsUrl: externalUrls.ubereatsUrl,
+        grubhubUrl: externalUrls.grubhubUrl,
+        scrapedAt: new Date().toISOString(),
+      } as Partial<ScrapedRestaurant>;
+    });
+  } catch (e) {
+    console.warn('[Scraper] OpenStreetMap error:', e);
+    return [];
+  }
+}
+
+// =============================================================================
+// Culver's locations — keyless US-only fallback
+// =============================================================================
+
+async function fetchCulversLocations(
+  coords: GeoCoords,
+  limit: number = 10
+): Promise<Partial<ScrapedRestaurant>[]> {
+  try {
+    const url = `https://www.culvers.com/api/locator/getLocations?lat=${coords.lat}&long=${coords.lng}&limit=${limit}`;
+    const response = await fetchWithTimeout(url, {}, 8000);
+    if (!response.ok) {
+      console.warn(`[Scraper] Culver's status ${response.status}`);
+      return [];
+    }
+    const data: any = await response.json();
+    if (!data.isSuccessful || !data.data?.geofences) return [];
+
+    return data.data.geofences.map((loc: any) => {
+      const meta = loc.metadata || {};
+      const lat = loc.geometryCenter?.coordinates?.[1] ?? coords.lat;
+      const lng = loc.geometryCenter?.coordinates?.[0] ?? coords.lng;
+      const externalUrls = generateExternalUrls(
+        loc.description || "Culver's",
+        meta.street || '',
+        meta.city || '',
+        meta.state || '',
+        meta.country || 'US',
+        lat,
+        lng
+      );
+      return {
+        id: `culvers_${loc._id}`,
+        name: loc.description || "Culver's",
+        address: meta.street || '',
+        city: meta.city || '',
+        state: meta.state || '',
+        zipCode: meta.postalCode || '',
+        postalCode: meta.postalCode || '',
+        latitude: lat,
+        longitude: lng,
+        phone: meta.phone,
+        website: 'https://www.culvers.com',
+        ratings: { aggregated: 4.5, totalReviews: 0 },
+        priceRange: '$',
+        cuisineType: 'Fast Food',
+        categories: ['Fast Food', 'Burgers', 'Ice Cream'],
+        hours: meta.dineInHours,
+        isCulvers: true,
+        flavorOfTheDay: meta.flavorOfDayName || null,
+        flavorDescription: meta.flavorOfTheDayDescription || null,
+        sources: ['culvers'],
+        yelpUrl: externalUrls.yelpUrl,
+        googleMapsUrl: externalUrls.googleMapsUrl,
+        doordashUrl: externalUrls.doordashUrl,
+        ubereatsUrl: externalUrls.ubereatsUrl,
+        grubhubUrl: externalUrls.grubhubUrl,
+        scrapedAt: new Date().toISOString(),
+      } as Partial<ScrapedRestaurant>;
+    });
+  } catch (e) {
+    console.warn('[Scraper] Culver\'s error:', e);
+    return [];
+  }
+}
+
 export async function scrapeRestaurants(opts: ScrapeOptions): Promise<ScrapedRestaurant[]> {
-  const { 
-    postalCode, 
+  const {
+    postalCode,
     countryCode,
-    radius, 
+    radius,
     radiusUnit = 'miles',
-    limit, 
-    foursquareKey, 
-    hereKey, 
-    googleKey 
+    cuisineType,
+    limit,
+    foursquareKey,
+    hereKey,
+    googleKey,
   } = opts;
-  
+
   console.log(`[Scraper] Fetching for ${postalCode}${countryCode ? ` (${countryCode})` : ''}, radius ${radius} ${radiusUnit}`);
-  
+
   const coords = await getCoords(postalCode, countryCode);
-  
+
   // Check if geocoding failed
   if (coords.lat === 0 && coords.lng === 0) {
     console.error(`[Scraper] Failed to geocode postal code: ${postalCode}`);
     return [];
   }
-  
+
   const radiusMeters = toMeters(radius, radiusUnit);
-  
-  const [fsq, here, goog] = await Promise.allSettled([
+
+  // Always include OSM + Culver's so empty paid-API keys don't return zero.
+  // Culver's is US-only and skipped automatically when countryCode != "US"
+  // (or when none was supplied for a non-5-digit zip).
+  const looksLikeUS =
+    countryCode?.toUpperCase() === 'US' ||
+    (!countryCode && /^\d{5}$/.test(postalCode));
+
+  const [fsq, here, goog, osm, culv] = await Promise.allSettled([
     fetchFoursquare(coords, radiusMeters, foursquareKey, limit),
     fetchHERE(coords, radiusMeters, hereKey, limit),
     fetchGoogle(coords, radiusMeters, googleKey, limit),
+    fetchOpenStreetMap(coords, radiusMeters, cuisineType, limit),
+    looksLikeUS
+      ? fetchCulversLocations(coords, 10)
+      : Promise.resolve([] as Partial<ScrapedRestaurant>[]),
   ]);
-  
+
   const all: Partial<ScrapedRestaurant>[] = [];
-  
+
   if (fsq.status === 'fulfilled') {
     console.log(`[Scraper] Foursquare: ${fsq.value.length}`);
     all.push(...fsq.value);
@@ -752,10 +950,18 @@ export async function scrapeRestaurants(opts: ScrapeOptions): Promise<ScrapedRes
     console.log(`[Scraper] Google: ${goog.value.length}`);
     all.push(...goog.value);
   }
-  
+  if (osm.status === 'fulfilled') {
+    console.log(`[Scraper] OpenStreetMap: ${osm.value.length}`);
+    all.push(...osm.value);
+  }
+  if (culv.status === 'fulfilled') {
+    console.log(`[Scraper] Culver's: ${culv.value.length}`);
+    all.push(...culv.value);
+  }
+
   const merged = mergeRestaurants(all);
   console.log(`[Scraper] Merged: ${merged.length} restaurants`);
-  
+
   return merged.slice(0, limit);
 }
 
