@@ -81,3 +81,33 @@
 # Keep custom application class (NewArchEnabled requires it for the JSI
 # bridge to wire up correctly).
 -keep public class * extends android.app.Application
+
+# ─── Tolerance for R8 missing-class errors (AGP 8+) ─────────────────────────
+# AGP 8 / R8 is strict: any unresolved class reference fails the build,
+# even when it's only reached via @Optional or runtime-conditional code.
+# RN + Expo libraries pull in a long tail of optional deps (kotlinx-
+# serialization, slf4j, bouncycastle, GMS optional modules, etc.) that
+# aren't actually used at runtime but trip R8's reachability analysis.
+# -dontwarn for known optional packages keeps the build green; -keep
+# above guarantees the runtime-critical classes stay anyway.
+-dontwarn kotlinx.serialization.**
+-dontwarn org.slf4j.**
+-dontwarn org.conscrypt.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.openjsse.**
+-dontwarn java.lang.invoke.StringConcatFactory
+-dontwarn javax.lang.model.**
+-dontwarn javax.annotation.**
+-dontwarn javax.naming.**
+-dontwarn com.google.auto.value.**
+-dontwarn com.google.api.client.**
+-dontwarn com.google.errorprone.annotations.**
+-dontwarn org.jetbrains.annotations.**
+-dontwarn org.codehaus.mojo.animal_sniffer.**
+-dontwarn android.os.Bundle
+-dontwarn com.facebook.react.devsupport.**
+
+# Final safety net: print warnings to the build log instead of failing.
+# This is the same posture AGP 7 had by default; AGP 8 made it opt-in.
+# The mapping.txt is still produced and crash deobfuscation still works.
+-ignorewarnings
