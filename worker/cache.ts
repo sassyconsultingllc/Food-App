@@ -18,43 +18,29 @@ export interface CachedRestaurant {
 const CACHE_TTL_HOURS = 24;
 
 /**
- * Initialize cache tables with international support
+ * Initialize cache tables with international support.
+ *
+ * Cloudflare D1 requires each DDL statement to be on a single line when
+ * passed as one big script — multi-line CREATE TABLE blocks were being
+ * read as just the first line ("CREATE TABLE IF NOT EXISTS postal_cache (")
+ * and failing with "incomplete input: SQLITE_ERROR". This silently broke
+ * cache initialization in production, causing every search to bypass the
+ * cache and the cacheRestaurants() write path to fail. Each DDL is now
+ * a single-line string fed through db.batch() so the runtime treats them
+ * as separate atomic statements without the line-splitting trap.
  */
 export async function initCacheTables(db: D1Database): Promise<void> {
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS postal_cache (
-      cache_key TEXT PRIMARY KEY,
-      postal_code TEXT NOT NULL,
-      country_code TEXT,
-      continent TEXT,
-      cached_at TEXT NOT NULL,
-      expires_at TEXT NOT NULL,
-      sources TEXT NOT NULL,
-      restaurant_count INTEGER DEFAULT 0
-    );
-    
-    CREATE TABLE IF NOT EXISTS restaurant_cache (
-      id TEXT PRIMARY KEY,
-      cache_key TEXT NOT NULL,
-      source_id TEXT,
-      name TEXT NOT NULL,
-      country_code TEXT,
-      data TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      FOREIGN KEY (cache_key) REFERENCES postal_cache(cache_key)
-    );
-    
-    CREATE INDEX IF NOT EXISTS idx_restaurant_cache_key ON restaurant_cache(cache_key);
-    CREATE INDEX IF NOT EXISTS idx_restaurant_source ON restaurant_cache(source_id);
-    CREATE INDEX IF NOT EXISTS idx_restaurant_country ON restaurant_cache(country_code);
-    CREATE INDEX IF NOT EXISTS idx_postal_country ON postal_cache(country_code);
-    CREATE INDEX IF NOT EXISTS idx_postal_continent ON postal_cache(continent);
-    
-    -- Legacy compatibility: create view for old zip_cache table name
-    CREATE VIEW IF NOT EXISTS zip_cache AS 
-      SELECT cache_key as zip_code, postal_code, cached_at, expires_at, sources 
-      FROM postal_cache;
-  `);
+  const statements = [
+    "CREATE TABLE IF NOT EXISTS postal_cache (cache_key TEXT PRIMARY KEY, postal_code TEXT NOT NULL, country_code TEXT, continent TEXT, cached_at TEXT NOT NULL, expires_at TEXT NOT NULL, sources TEXT NOT NULL, restaurant_count INTEGER DEFAULT 0)",
+    "CREATE TABLE IF NOT EXISTS restaurant_cache (id TEXT PRIMARY KEY, cache_key TEXT NOT NULL, source_id TEXT, name TEXT NOT NULL, country_code TEXT, data TEXT NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY (cache_key) REFERENCES postal_cache(cache_key))",
+    "CREATE INDEX IF NOT EXISTS idx_restaurant_cache_key ON restaurant_cache(cache_key)",
+    "CREATE INDEX IF NOT EXISTS idx_restaurant_source ON restaurant_cache(source_id)",
+    "CREATE INDEX IF NOT EXISTS idx_restaurant_country ON restaurant_cache(country_code)",
+    "CREATE INDEX IF NOT EXISTS idx_postal_country ON postal_cache(country_code)",
+    "CREATE INDEX IF NOT EXISTS idx_postal_continent ON postal_cache(continent)",
+    "CREATE VIEW IF NOT EXISTS zip_cache AS SELECT cache_key AS zip_code, postal_code, cached_at, expires_at, sources FROM postal_cache",
+  ];
+  await db.batch(statements.map((sql) => db.prepare(sql)));
 }
 
 /**
