@@ -3,7 +3,7 @@
 
 **App:** Foodie Finder  
 **Version:** 1.0.0  
-**Package:** space.sassy.foodie.finder.t20251222143704  
+**Package:** com.sassyconsultingllc.foodiefinder  
 **Date:** January 14, 2025
 
 ---
@@ -295,7 +295,7 @@ adb devices
 adb install -r foodie-finder-*.apk
 
 # Launch app
-adb shell am start -n space.sassy.foodie.finder.t20251222143704/.MainActivity
+adb shell am start -n com.sassyconsultingllc.foodiefinder/.MainActivity
 ```
 
 ### On Emulator

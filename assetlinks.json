@@ -50,7 +50,7 @@
     ],
     "target": {
       "namespace": "android_app",
-      "package_name": "space.sassy.foodie.finder.t20251222143704",
+      "package_name": "com.sassyconsultingllc.foodiefinder",
       "sha256_cert_fingerprints": [
         "CB:97:97:5B:D9:34:AF:FD:1D:64:72:EE:1C:84:12:5E:D8:AE:15:CD:CB:1E:C1:5B:18:41:65:A1:6D:D2:13:16"
       ]

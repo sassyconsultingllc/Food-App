@@ -1,4 +1,4 @@
-package space.sassy.foodie.finder.t20251222143704
+package com.sassyconsultingllc.foodiefinder
 import expo.modules.splashscreen.SplashScreenManager
 
 import android.os.Build

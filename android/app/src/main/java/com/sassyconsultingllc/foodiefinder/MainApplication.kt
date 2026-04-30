@@ -1,4 +1,4 @@
-package space.sassy.foodie.finder.t20251222143704
+package com.sassyconsultingllc.foodiefinder
 
 import android.app.Application
 import android.content.res.Configuration

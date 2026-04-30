@@ -216,4 +216,4 @@ PUSHGATEWAY_URL=http://127.0.0.1:9091 REDIS_URL=redis://127.0.0.1:6379 pnpm test
 
 **Created:** January 14, 2025  
 **Project:** Foodie Finder v8  
-**Package:** space.sassy.foodie.finder.t20251222143704
+**Package:** com.sassyconsultingllc.foodiefinder

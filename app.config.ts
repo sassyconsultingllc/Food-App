@@ -2,13 +2,13 @@
 import "./scripts/load-env.js";
 import type { ExpoConfig } from "expo/config";
 
-// Bundle ID format: space.sassy.<project_name_dots>.<timestamp>
-// e.g., "my-app" created at 2024-01-15 10:30:45 -> "space.sassy.my.app.t20240115103045"
-const bundleId = "space.sassy.foodie.finder.t20251222143704";
-// Extract timestamp from bundle ID and prefix with "sassy" for deep link scheme
-// e.g., "space.sassy.my.app.t20240115103045" -> "sassy20240115103045"
-const timestamp = bundleId.split(".").pop()?.replace(/^t/, "") ?? "";
-const schemeFromBundleId = `sassy${timestamp}`;
+// Production bundle / package ID. Reverse-domain of sassyconsultingllc.com
+// + app slug. Locked once published to Play Store / App Store — DO NOT
+// change without coordinating a fresh app listing.
+const bundleId = "com.sassyconsultingllc.foodiefinder";
+// Custom-scheme deep link prefix for in-app routing (`foodiefinder://...`).
+// Independent of the bundle ID so we can pick something human-readable.
+const schemeFromBundleId = "foodiefinder";
 
 const env = {
   // App branding - update these values directly (do not use env vars)

@@ -28,11 +28,11 @@
         <action android:name="android.intent.action.VIEW"/>
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
-        <data android:scheme="sassy20251222143704"/>
+        <data android:scheme="foodiefinder"/>
       </intent-filter>
       <intent-filter data-generated="true">
         <action android:name="android.intent.action.VIEW"/>
-        <data android:scheme="sassy20251222143704" android:host="*"/>
+        <data android:scheme="foodiefinder" android:host="*"/>
         <category android:name="android.intent.category.BROWSABLE"/>
         <category android:name="android.intent.category.DEFAULT"/>
       </intent-filter>
