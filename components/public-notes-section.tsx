@@ -7,7 +7,7 @@
  * Backend: getPublicNotes / addPublicNote via tRPC.
  */
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   View,
   StyleSheet,
@@ -15,6 +15,8 @@ import {
   Pressable,
   Alert,
   ActivityIndicator,
+  ScrollView,
+  findNodeHandle,
 } from "react-native";
 import * as Haptics from "expo-haptics";
 
@@ -35,6 +37,11 @@ interface PublicNote {
 interface PublicNotesSectionProps {
   restaurantId: string;
   restaurantName: string;
+  /**
+   * Ref to the parent ScrollView. When provided, the note input scrolls
+   * itself into view on focus so the OS keyboard doesn't cover it.
+   */
+  parentScrollRef?: React.RefObject<ScrollView | null>;
 }
 
 function timeAgo(ts: number): string {
@@ -50,13 +57,37 @@ function timeAgo(ts: number): string {
   return `${months}mo ago`;
 }
 
-export function PublicNotesSection({ restaurantId, restaurantName }: PublicNotesSectionProps) {
+export function PublicNotesSection({
+  restaurantId,
+  restaurantName,
+  parentScrollRef,
+}: PublicNotesSectionProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
 
   const [newNote, setNewNote] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [showInput, setShowInput] = useState(false);
+  const inputAnchorRef = useRef<View>(null);
+
+  // Scroll the input into view above the keyboard. Without this, tapping
+  // the note field on a small device hides it behind the OS keyboard.
+  // Delay one frame so layout settles after `setShowInput(true)`.
+  const scrollInputIntoView = () => {
+    const scroll = parentScrollRef?.current;
+    if (!scroll || !inputAnchorRef.current) return;
+    const handle = findNodeHandle(scroll);
+    if (handle == null) return;
+    setTimeout(() => {
+      inputAnchorRef.current?.measureLayout(
+        handle,
+        (_x, y) => {
+          scroll.scrollTo({ y: Math.max(0, y - 24), animated: true });
+        },
+        () => {}
+      );
+    }, 80);
+  };
 
   const notesQuery = trpc.restaurant.getPublicNotes.useQuery(
     { restaurantId },
@@ -200,7 +231,10 @@ export function PublicNotesSection({ restaurantId, restaurantName }: PublicNotes
       )}
 
       {showInput ? (
-        <View style={[styles.inputSection, { borderColor: colors.border }]}>
+        <View
+          ref={inputAnchorRef}
+          style={[styles.inputSection, { borderColor: colors.border }]}
+        >
           <TextInput
             style={[styles.nameInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
             value={displayName}
@@ -208,6 +242,7 @@ export function PublicNotesSection({ restaurantId, restaurantName }: PublicNotes
             placeholder="Display name (optional)"
             placeholderTextColor={colors.textSecondary}
             maxLength={30}
+            onFocus={scrollInputIntoView}
           />
           <TextInput
             style={[styles.noteInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
@@ -217,6 +252,7 @@ export function PublicNotesSection({ restaurantId, restaurantName }: PublicNotes
             placeholderTextColor={colors.textSecondary}
             multiline
             maxLength={280}
+            onFocus={scrollInputIntoView}
           />
           <View style={styles.inputActions}>
             <ThemedText style={[styles.charCount, { color: colors.textSecondary }]}>
@@ -251,6 +287,7 @@ export function PublicNotesSection({ restaurantId, restaurantName }: PublicNotes
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             setShowInput(true);
+            scrollInputIntoView();
           }}
           style={({ pressed }) => [
             styles.addTipButton,

@@ -475,6 +475,14 @@ function formatCuisine(cuisine?: string): string {
   return first.charAt(0).toUpperCase() + first.slice(1).replace(/_/g, ' ');
 }
 
+// Google Places `types` come back as machine tokens — "fast_food",
+// "meal_takeaway", "liquor_store". Render them as human strings before
+// storing on the restaurant record.
+function formatGoogleType(t?: string): string | undefined {
+  if (!t) return undefined;
+  return t.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function parseOSMHours(hoursString?: string): Record<string, string> | undefined {
   if (!hoursString) return undefined;
   
@@ -644,10 +652,12 @@ async function fetchFromGooglePlaces(
           totalReviews: place.user_ratings_total || 0,
         },
         priceRange: place.price_level ? '$'.repeat(place.price_level) : undefined,
-        cuisineType: place.types?.find((t: string) =>
-          !['restaurant', 'food', 'point_of_interest', 'establishment'].includes(t)
+        cuisineType: formatGoogleType(
+          place.types?.find((t: string) =>
+            !['restaurant', 'food', 'point_of_interest', 'establishment'].includes(t)
+          )
         ) || 'Restaurant',
-        categories: place.types || [],
+        categories: (place.types || []).map((t: string) => formatGoogleType(t) || t),
         photos,
         menuUrl: details?.menuUrl,
         sources: ['google'],

@@ -7,7 +7,7 @@ import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import * as Haptics from "expo-haptics";
 import * as Linking from "expo-linking";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -82,6 +82,7 @@ export default function RestaurantDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const scrollViewRef = useRef<ScrollView>(null);
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
   const { getRestaurantById, isFavorite, toggleFavorite, getFavoriteRestaurants, loading: dataLoading, updateRestaurantNotes, getRestaurantNotes } = useRestaurantStorage();
@@ -259,9 +260,13 @@ export default function RestaurantDetailScreen() {
       </View>
 
       <ScrollView
+        ref={scrollViewRef}
         style={styles.scrollView}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 20 }]}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        automaticallyAdjustKeyboardInsets
       >
         {/* Restaurant Name & Type */}
         <View style={styles.titleSection}>
@@ -463,6 +468,7 @@ export default function RestaurantDetailScreen() {
         <PublicNotesSection
           restaurantId={restaurant.id}
           restaurantName={restaurant.name}
+          parentScrollRef={scrollViewRef}
         />
 
         {/* Ratings Breakdown — shows actual scraper sources (Google / Foursquare / HERE) */}

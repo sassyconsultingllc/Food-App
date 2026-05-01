@@ -472,10 +472,12 @@ async function fetchGoogle(
           googleReviewCount: p.user_ratings_total,
         },
         priceRange: p.price_level ? '$'.repeat(p.price_level) : undefined,
-        cuisineType: p.types?.find((t: string) =>
-          !['restaurant', 'food', 'point_of_interest', 'establishment'].includes(t)
+        cuisineType: formatGoogleType(
+          p.types?.find((t: string) =>
+            !['restaurant', 'food', 'point_of_interest', 'establishment'].includes(t)
+          )
         ) || 'Restaurant',
-        categories: p.types || [],
+        categories: (p.types || []).map((t: string) => formatGoogleType(t) || t),
         photos,
         website: details?.website,
         phone: details?.phone,
@@ -716,6 +718,15 @@ function formatOsmCuisine(cuisine?: string): string {
   if (!cuisine) return 'Restaurant';
   const first = cuisine.split(';')[0].trim();
   return first.charAt(0).toUpperCase() + first.slice(1).replace(/_/g, ' ');
+}
+
+// Google Places `types` come back as machine tokens — "fast_food",
+// "meal_takeaway", "liquor_store". Render them as human strings ("Fast
+// Food", "Meal Takeaway") before storing on the restaurant record so
+// the UI doesn't surface raw underscored tokens to users.
+function formatGoogleType(t?: string): string | undefined {
+  if (!t) return undefined;
+  return t.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function parseOsmHours(hoursString?: string): Record<string, string> | undefined {
