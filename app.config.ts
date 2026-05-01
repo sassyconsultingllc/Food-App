@@ -156,7 +156,17 @@ const config: ExpoConfig = {
           "Foodie Finder uses your location to find nearby restaurants.",
       },
     ],
-    "expo-audio",
+    [
+      "expo-audio",
+      {
+        // Playback-only — no recording in the app (only useAudioPlayer for
+        // UI sounds via hooks/use-app-sounds.ts). Keep RECORD_AUDIO and the
+        // iOS NSMicrophoneUsageDescription out so Play Store / App Store
+        // don't classify this as a microphone-using app.
+        microphonePermission: false,
+        recordAudioAndroid: false,
+      },
+    ],
   ],
   experiments: {
     typedRoutes: true,
