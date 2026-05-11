@@ -9,6 +9,7 @@ import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "./trpc-router";
 import { scrapeRestaurants, getCoords } from "./scraper";
 import { initCacheTables } from "./cache";
+import { discoverMenu, cacheKeyForWebsite } from "./menu-discoverer";
 // =============================================================================
 // D1 Cache Table Initialization (fixes Mercury audit CRITICAL)
 // =============================================================================
@@ -291,9 +292,16 @@ app.get('/api/debug/search', async (c) => {
 // Thresholds are duplicated from utils/photo-classifier.ts so this
 // endpoint is the authoritative classifier — clients simply consume the
 // "menu" / "food" labels.
-const VISION_MIN_CHARS = 250;
-const VISION_MIN_WORDS = 40;
-const VISION_MIN_LINES = 8;
+//
+// Bumped down 2026-05-10: the previous AND of (charCount≥250, wordCount≥40,
+// lineCount≥8) rejected legitimate one-page menus, chalkboards, and
+// phone shots of printed menus where OCR confidence is uneven. The new
+// rule passes anything with enough TEXT OR enough structured LINES,
+// which catches sparse menus while still rejecting food photos (which
+// produce ~0 chars and 0 lines).
+const VISION_MIN_CHARS = 150;
+const VISION_MIN_WORDS = 25;
+const VISION_MIN_LINES = 6;
 const VISION_CACHE_TTL = 60 * 60 * 24 * 30; // 30 days
 
 app.post("/api/vision/classify", async (c) => {
@@ -496,12 +504,14 @@ app.post("/api/vision/classify", async (c) => {
         const charCount = text.replace(/\s+/g, "").length;
         const wordCount = text.split(/\s+/).filter((w) => w.length > 1).length;
         const lineCount = text.split(/\r?\n/).filter((l) => l.trim().length > 0).length;
-        const label: "menu" | "food" =
-          charCount >= VISION_MIN_CHARS &&
-          wordCount >= VISION_MIN_WORDS &&
-          lineCount >= VISION_MIN_LINES
-            ? "menu"
-            : "food";
+        // Pass on EITHER (enough chars AND enough words) OR enough lines.
+        // Catches dense printed menus (chars+words bar) and sparse chalkboards
+        // / one-page menus (line bar) without re-admitting food photos
+        // (which yield charCount≈0, lineCount≈0).
+        const meetsTextBar =
+          charCount >= VISION_MIN_CHARS && wordCount >= VISION_MIN_WORDS;
+        const meetsLineBar = lineCount >= VISION_MIN_LINES;
+        const label: "menu" | "food" = meetsTextBar || meetsLineBar ? "menu" : "food";
         results[url] = label;
         if (cacheKv) {
           try {
@@ -587,6 +597,144 @@ app.get("/api/menu/:restaurantId", async (c) => {
     return c.json({ error: String(err) }, 500);
   }
 });
+
+// POST trigger menu discovery for a restaurant
+// =============================================================================
+// Crawls the restaurant's website, finds the actual menu page (or PDF),
+// pulls down any embedded menu images, and persists them to menu_photos
+// with source='website'. The mobile app calls this when opening the
+// restaurant detail screen — subsequent GETs to /api/menu/:restaurantId
+// then include the scraped images alongside any user uploads.
+//
+// Cached per-hostname in menu_discovery_cache for 7 days so we don't
+// hammer the same site for every diner who opens the screen. Cached
+// negative results (no menu found) get a shorter TTL (1 day) so we
+// retry sooner once the site gets a menu page.
+app.post("/api/menu/discover", async (c) => {
+  const env = c.env as any;
+  const db = c.env.DB;
+  if (!db) return c.json({ error: "DB not configured" }, 500);
+
+  await ensureCacheTablesIfNeeded(db);
+
+  // Rate-limit per client IP — discovery does up to ~13 outbound fetches
+  // per call so a single IP shouldn't be able to burn through cycles.
+  const ip = getClientIP(c);
+  const rl = await checkRateLimit(env.RATE_LIMIT, `discover:${ip}`, 20, 60);
+  c.header("X-RateLimit-Remaining", String(rl.remaining));
+  if (!rl.allowed) {
+    return c.json({ error: "Discovery rate limit exceeded. Try again in a minute." }, 429);
+  }
+
+  let body: { restaurantId?: unknown; website?: unknown };
+  try {
+    body = (await c.req.json()) as { restaurantId?: unknown; website?: unknown };
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+
+  const restaurantId = typeof body.restaurantId === "string" ? body.restaurantId : "";
+  const website = typeof body.website === "string" ? body.website : "";
+  if (!/^[\w-]{1,128}$/.test(restaurantId)) {
+    return c.json({ error: "Invalid restaurant ID" }, 400);
+  }
+  if (!website || website.length > 2000) {
+    return c.json({ error: "website required" }, 400);
+  }
+
+  const host = cacheKeyForWebsite(website);
+  if (!host) {
+    return c.json({ error: "Invalid website URL" }, 400);
+  }
+
+  // Check the per-host discovery cache first.
+  try {
+    const nowIso = new Date().toISOString();
+    const cached = await db
+      .prepare(
+        "SELECT menu_url, is_pdf, images FROM menu_discovery_cache WHERE host = ? AND expires_at > ?"
+      )
+      .bind(host, nowIso)
+      .first<{ menu_url: string | null; is_pdf: number; images: string }>();
+    if (cached) {
+      const images: string[] = (() => {
+        try { return JSON.parse(cached.images) as string[]; } catch { return []; }
+      })();
+      // Even on cache hit we ensure the menu_photos rows exist for THIS
+      // restaurant (a different restaurant on the same host hasn't been
+      // populated yet).
+      if (images.length) {
+        await persistScrapedImages(db, restaurantId, images);
+      }
+      return c.json({
+        cached: true,
+        menuUrl: cached.menu_url || undefined,
+        isPdf: cached.is_pdf === 1,
+        images,
+      });
+    }
+  } catch {
+    // Cache lookup failure shouldn't block discovery.
+  }
+
+  const result = await discoverMenu(website);
+
+  // Cache hit-or-miss. 7 days for hits, 1 day for misses (retry sooner
+  // once a site gets a menu page).
+  const ttlSeconds = result.menuUrl ? 7 * 24 * 60 * 60 : 24 * 60 * 60;
+  const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+  try {
+    await db
+      .prepare(
+        "INSERT INTO menu_discovery_cache (host, menu_url, is_pdf, images, expires_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(host) DO UPDATE SET menu_url = excluded.menu_url, is_pdf = excluded.is_pdf, images = excluded.images, expires_at = excluded.expires_at, created_at = datetime('now')"
+      )
+      .bind(host, result.menuUrl || null, result.isPdf ? 1 : 0, JSON.stringify(result.images), expiresAt)
+      .run();
+  } catch (err) {
+    console.warn("[discover] cache write failed:", err);
+  }
+
+  if (result.images.length) {
+    await persistScrapedImages(db, restaurantId, result.images);
+  }
+
+  return c.json({
+    cached: false,
+    menuUrl: result.menuUrl,
+    isPdf: result.isPdf,
+    images: result.images,
+  });
+});
+
+async function persistScrapedImages(
+  db: any,
+  restaurantId: string,
+  imageUrls: string[]
+): Promise<void> {
+  if (!imageUrls.length) return;
+  try {
+    // Insert one row per image with a deterministic id so re-running
+    // discovery for the same restaurant doesn't create duplicates.
+    const stmts = imageUrls.slice(0, 10).map((url, i) => {
+      // Cheap hash so the same URL produces the same id — keeps the
+      // per-restaurant cap (MAX_PHOTOS_PER_RESTAURANT) from inflating
+      // every time discovery runs.
+      let hash = 5381;
+      for (let k = 0; k < url.length; k++) {
+        hash = ((hash << 5) + hash + url.charCodeAt(k)) | 0;
+      }
+      const id = `web_${restaurantId}_${Math.abs(hash).toString(36)}_${i}`;
+      return db
+        .prepare(
+          "INSERT OR IGNORE INTO menu_photos (id, restaurant_id, image_url, source, sort_order) VALUES (?, ?, ?, 'website', ?)"
+        )
+        .bind(id, restaurantId, url, i);
+    });
+    await db.batch(stmts);
+  } catch (err) {
+    console.warn("[discover] persistScrapedImages failed:", err);
+  }
+}
 
 // POST upload menu photo
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/gif"]);

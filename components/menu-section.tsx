@@ -37,6 +37,17 @@ const MENU_PHOTO_HEIGHT = MENU_PHOTO_WIDTH * 1.3; // Menu aspect ratio (taller)
 interface MenuSectionProps {
   restaurantId: string;
   restaurantName: string;
+  /**
+   * Restaurant homepage URL (the scraper currently sets restaurant.menu.url
+   * to this — it is NOT a menu URL yet). The component runs discovery
+   * against this to find the real menu page or PDF.
+   */
+  website?: string;
+  /**
+   * Optional already-known menu URL. If discovery doesn't find a better
+   * one, this is used as a last-resort fallback (rendered as "Visit
+   * Website", not "View Menu", so the button is honest).
+   */
   menuUrl?: string;
   /** Menu photos — already classified as menu pages (up to 5). */
   menuPhotos?: string[];
@@ -51,6 +62,7 @@ interface MenuSectionProps {
 export function MenuSection({
   restaurantId,
   restaurantName,
+  website,
   menuUrl,
   menuPhotos: externalMenuPhotos,
   classifying = false,
@@ -62,10 +74,19 @@ export function MenuSection({
   const [fullscreenVisible, setFullscreenVisible] = useState(false);
   const [fullscreenIndex, setFullscreenIndex] = useState(0);
   const [uploading, setUploading] = useState(false);
-  // apiMenuPhotos holds user-uploaded photos from the R2-backed
+  // apiMenuPhotos holds user-uploaded + website-scraped photos from the
   // /api/menu/:restaurantId endpoint. They persist across app launches
   // and are visible to other users.
   const [apiMenuPhotos, setApiMenuPhotos] = useState<string[]>([]);
+  // Discovery results — the worker crawls the restaurant website to find
+  // the real menu page (or PDF) and any embedded menu images. Null means
+  // discovery hasn't returned yet; an object (possibly with no menuUrl)
+  // means it has.
+  const [discovery, setDiscovery] = useState<{
+    menuUrl?: string;
+    isPdf: boolean;
+  } | null>(null);
+  const [discovering, setDiscovering] = useState(false);
 
   // Fetch menu photos from worker API on mount
   useEffect(() => {
@@ -88,6 +109,52 @@ export function MenuSection({
     return () => { cancelled = true; };
   }, [restaurantId]);
 
+  // Kick off discovery against the restaurant website. Persists scraped
+  // images into menu_photos server-side, and returns the resolved menu
+  // URL + images directly so we can append them to apiMenuPhotos without
+  // waiting for a refetch round-trip.
+  useEffect(() => {
+    if (!website) {
+      setDiscovery({ isPdf: false });
+      return;
+    }
+    let cancelled = false;
+    setDiscovering(true);
+    (async () => {
+      try {
+        const baseUrl = getApiBaseUrl();
+        const res = await fetch(`${baseUrl}/api/menu/discover`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ restaurantId, website }),
+        });
+        if (!res.ok) {
+          if (!cancelled) setDiscovery({ isPdf: false });
+          return;
+        }
+        const data = (await res.json()) as {
+          menuUrl?: string;
+          isPdf?: boolean;
+          images?: string[];
+        };
+        if (cancelled) return;
+        setDiscovery({ menuUrl: data.menuUrl, isPdf: !!data.isPdf });
+        if (data.images?.length) {
+          setApiMenuPhotos((prev) => {
+            const merged = new Set<string>([...prev, ...data.images!]);
+            return Array.from(merged);
+          });
+        }
+      } catch (e) {
+        console.warn("[MenuSection] discovery failed:", e);
+        if (!cancelled) setDiscovery({ isPdf: false });
+      } finally {
+        if (!cancelled) setDiscovering(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [restaurantId, website]);
+
   // Previously this component did a client-side Vision OCR call to
   // pre-check whether the user-picked asset was a menu. That required
   // shipping the Google Vision API key in every installed APK
@@ -101,8 +168,9 @@ export function MenuSection({
     []
   );
 
-  // Combine all menu photo sources — user-uploaded (R2-backed) first so
-  // they take priority over classified Google photos. Dedupe + cap at 5.
+  // Combine all menu photo sources — user-uploaded + website-scraped
+  // (apiMenuPhotos) first so they take priority over Vision-classified
+  // Google photos. Dedupe + cap at 5.
   const allMenuPhotos = Array.from(
     new Set<string>([
       ...apiMenuPhotos,
@@ -110,12 +178,29 @@ export function MenuSection({
     ])
   ).slice(0, 5);
 
-  // While the classifier is running and we have NO confirmed menu photos
-  // yet, render a "searching" state instead of flashing arbitrary photos.
+  // While EITHER the Vision classifier OR the website crawl is still
+  // running and we have no photos yet, render a "searching" state instead
+  // of flashing arbitrary photos.
   const isSearching =
-    classifying && allMenuPhotos.length === 0 && apiMenuPhotos.length === 0;
+    (classifying || discovering) &&
+    allMenuPhotos.length === 0 &&
+    apiMenuPhotos.length === 0;
 
-  const hasMenuContent = allMenuPhotos.length > 0 || menuUrl || isSearching;
+  // Pick the URL the action button should open. Priority:
+  //   1. Discovered menu URL (real /menu page or PDF)
+  //   2. Caller-provided menuUrl (legacy fallback — usually homepage)
+  //   3. The website prop (homepage)
+  const resolvedMenuUrl = discovery?.menuUrl;
+  const fallbackUrl = menuUrl || website;
+  const actionUrl = resolvedMenuUrl || fallbackUrl;
+
+  // Always render the section once we have a restaurantId — even with no
+  // photos, no discovered menu, and no website, the user should still be
+  // able to tap Upload/Camera to contribute a menu photo. Previously the
+  // whole section disappeared for restaurants without websites (e.g. CUT
+  // Beverly Hills) which silently removed the upload affordance for the
+  // exact restaurants that need it most.
+  const hasMenuContent = !!restaurantId;
 
   const openFullscreen = (index: number) => {
     setFullscreenIndex(index);
@@ -317,10 +402,12 @@ export function MenuSection({
 
       {/* Action Buttons */}
       <View style={styles.menuActions}>
-        {/* Primary CTA — if we already have menu photos in the app, tap
-            opens the fullscreen in-app viewer so users don't have to
-            leave the app to see the menu. Only falls back to the external
-            website when no photos exist yet. */}
+        {/* Primary CTA. Priority:
+            1. Photos in-app → "View Full Menu (N pages)" → in-app viewer.
+            2. Discovered PDF → "Open Menu PDF" → external opener.
+            3. Discovered /menu page → "View Menu Page" → external opener.
+            4. Just the homepage → "Visit Website" — honest fallback so
+               users aren't told "View Menu" while we open the homepage. */}
         {allMenuPhotos.length > 0 ? (
           <Pressable
             onPress={() => openFullscreen(0)}
@@ -331,14 +418,41 @@ export function MenuSection({
               View Full Menu ({allMenuPhotos.length} {allMenuPhotos.length === 1 ? "page" : "pages"})
             </ThemedText>
           </Pressable>
-        ) : menuUrl ? (
+        ) : resolvedMenuUrl && discovery?.isPdf ? (
           <Pressable
-            onPress={() => Linking.openURL(menuUrl)}
+            onPress={() => Linking.openURL(resolvedMenuUrl)}
+            style={[styles.viewMenuButton, { backgroundColor: colors.accent }]}
+          >
+            <IconSymbol name="doc.richtext" size={18} color={AppColors.white} />
+            <ThemedText style={styles.viewMenuText}>Open Menu PDF</ThemedText>
+          </Pressable>
+        ) : resolvedMenuUrl ? (
+          <Pressable
+            onPress={() => Linking.openURL(resolvedMenuUrl)}
+            style={[styles.viewMenuButton, { backgroundColor: colors.accent }]}
+          >
+            <IconSymbol name="doc.text.fill" size={18} color={AppColors.white} />
+            <ThemedText style={styles.viewMenuText}>View Menu Page</ThemedText>
+          </Pressable>
+        ) : fallbackUrl ? (
+          <Pressable
+            onPress={() => Linking.openURL(fallbackUrl)}
             style={[styles.viewMenuButton, { backgroundColor: colors.accent }]}
           >
             <IconSymbol name="safari.fill" size={18} color={AppColors.white} />
-            <ThemedText style={styles.viewMenuText}>Visit Restaurant Website</ThemedText>
+            <ThemedText style={styles.viewMenuText}>Visit Website</ThemedText>
           </Pressable>
+        ) : !isSearching ? (
+          // No photos, no discovered menu, no website fallback — prompt
+          // the user to be the first to upload a menu photo. Without this
+          // the section would just show bare Upload/Camera buttons with
+          // no context.
+          <View style={[styles.emptyHint, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+            <IconSymbol name="doc.text" size={20} color={colors.textSecondary} />
+            <ThemedText style={[styles.emptyHintText, { color: colors.textSecondary }]}>
+              No menu found yet — be the first to share one.
+            </ThemedText>
+          </View>
         ) : null}
 
         <View style={styles.uploadRow}>
@@ -450,6 +564,21 @@ const styles = StyleSheet.create({
   searchingText: {
     fontSize: 14,
     fontWeight: "500",
+  },
+  emptyHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderStyle: "dashed",
+  },
+  emptyHintText: {
+    fontSize: 13,
+    flexShrink: 1,
   },
   carouselContent: {
     gap: Spacing.sm,

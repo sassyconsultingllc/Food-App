@@ -39,6 +39,20 @@ export async function initCacheTables(db: D1Database): Promise<void> {
     "CREATE INDEX IF NOT EXISTS idx_postal_country ON postal_cache(country_code)",
     "CREATE INDEX IF NOT EXISTS idx_postal_continent ON postal_cache(continent)",
     "CREATE VIEW IF NOT EXISTS zip_cache AS SELECT cache_key AS zip_code, postal_code, cached_at, expires_at, sources FROM postal_cache",
+    // menu_photos was previously created by hand against D1 — codifying it
+    // here so initCacheTables is idempotent and the GET/POST /api/menu/*
+    // handlers can never hit a missing-table error after a fresh deploy.
+    // 'source' values in use: 'user' (uploaded), 'website' (scraped from
+    // restaurant website by the discovery endpoint).
+    "CREATE TABLE IF NOT EXISTS menu_photos (id TEXT PRIMARY KEY, restaurant_id TEXT NOT NULL, image_url TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'user', caption TEXT, sort_order INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))",
+    "CREATE INDEX IF NOT EXISTS idx_menu_photos_restaurant ON menu_photos(restaurant_id)",
+    "CREATE INDEX IF NOT EXISTS idx_menu_photos_source ON menu_photos(source)",
+    // menu_discovery_cache stores per-domain results of crawling a
+    // restaurant website for the actual menu page. Keyed by hostname (not
+    // restaurant_id) because franchises share menu pages — running
+    // discovery once for `dominos.com` covers every Domino's location.
+    "CREATE TABLE IF NOT EXISTS menu_discovery_cache (host TEXT PRIMARY KEY, menu_url TEXT, is_pdf INTEGER DEFAULT 0, images TEXT NOT NULL DEFAULT '[]', expires_at TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')))",
+    "CREATE INDEX IF NOT EXISTS idx_menu_discovery_expires ON menu_discovery_cache(expires_at)",
   ];
   await db.batch(statements.map((sql) => db.prepare(sql)));
 }

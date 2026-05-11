@@ -38,6 +38,7 @@ export interface ScrapedRestaurant {
   photos?: string[];
   isCulvers?: boolean;
   flavorOfTheDay?: string;
+  flavorDescription?: string;
   reviewSummary: string;
   sentiment?: SentimentResult;
   // Generated URLs for external services
@@ -429,13 +430,15 @@ async function fetchGoogle(
     const data = await res.json() as any;
     const places = (data.results || []).slice(0, limit);
 
-    // Fetch Place Details in parallel to get full photo sets. Capped at 20
-    // to balance "every restaurant gets its photos" against Google Places
+    // Fetch Place Details in parallel to get full photo sets. Capped to
+    // balance "every restaurant gets its photos" against Google Places
     // billing — each detail call costs extra. Restaurants beyond this cap
     // fall back to the single search-result photo (still visible, just not
     // the full gallery). CLAUDE.md §Bug 1 explicitly calls out managing API
-    // costs for this enrichment.
-    const ENRICHMENT_CAP = 20;
+    // costs for this enrichment. Bumped 20→40 on 2026-05-10 so a wider
+    // slice of search results has enough photos to actually find menu
+    // candidates via Vision classification.
+    const ENRICHMENT_CAP = 40;
     // Promise.allSettled so a single detail-call timeout doesn't collapse
     // the entire Google result set — previously one 8s timeout kills the
     // whole search via the outer try/catch.
@@ -634,8 +637,20 @@ function mergeRestaurants(all: Partial<ScrapedRestaurant>[]): ScrapedRestaurant[
       }
     }
 
-    ratings.aggregated =
-      totalReviews > 0 ? Math.round((totalWeightedRating / totalReviews) * 10) / 10 : 0;
+    // When NO source contributes a numerical rating+count (e.g. a Culver's
+    // record where we hardcode aggregated=4.5 but totalReviews=0), the
+    // weighted-mean formula produces 0 and the record sinks to the bottom
+    // of the sort. Slice(0, limit) then drops it before the country filter.
+    // Fall back to the max pre-computed `aggregated` across source records
+    // so chain-API entries with a static rating still rank.
+    if (totalReviews > 0) {
+      ratings.aggregated = Math.round((totalWeightedRating / totalReviews) * 10) / 10;
+    } else {
+      const fallback = records
+        .map((r) => r.ratings?.aggregated ?? 0)
+        .reduce((a, b) => Math.max(a, b), 0);
+      ratings.aggregated = fallback;
+    }
     ratings.totalReviews = totalReviews;
     
     // Generate sentiment from ratings
@@ -674,9 +689,26 @@ function mergeRestaurants(all: Partial<ScrapedRestaurant>[]): ScrapedRestaurant[
       lng
     );
     
+    // Culver's-specific fields (isCulvers / flavorOfTheDay / flavorDescription)
+    // were previously dropped by the merge — when the Culver's-source
+    // record landed in the same name+location group as a Google Places
+    // entry, the merged record kept only the Google identity and the
+    // app's `restaurant.isCulvers && restaurant.flavorOfTheDay` gate
+    // never fired. Promote any Culver's record in the group to primary
+    // so id stays as `culvers_*` (matches the app's `isCulvers` branch)
+    // and propagate the flavor fields. Mirrors the working behavior in
+    // server/restaurant-scraper.ts mergeRestaurantRecords.
+    const culversRecord = records.find((r) => r.isCulvers);
+    const effectivePrimary = culversRecord ?? primary;
+    const finalId =
+      effectivePrimary.id ||
+      `merged_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const finalName = effectivePrimary.name || 'Unknown';
+    const finalCuisine = effectivePrimary.cuisineType || 'Restaurant';
+
     merged.push({
-      id: primary.id || `merged_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-      name: primary.name || 'Unknown',
+      id: finalId,
+      name: finalName,
       address,
       city,
       state,
@@ -690,11 +722,14 @@ function mergeRestaurants(all: Partial<ScrapedRestaurant>[]): ScrapedRestaurant[
       website: records.find(r => r.website)?.website,
       ratings,
       priceRange: records.find(r => r.priceRange)?.priceRange,
-      cuisineType: primary.cuisineType || 'Restaurant',
+      cuisineType: finalCuisine,
       categories: allCategories,
       photos: allPhotos.slice(0, 20),
       hours: records.find(r => r.hours && Object.keys(r.hours).length > 0)?.hours,
       menuUrl: records.find(r => r.menuUrl)?.menuUrl,
+      isCulvers: records.some(r => r.isCulvers) || undefined,
+      flavorOfTheDay: records.find(r => r.flavorOfTheDay)?.flavorOfTheDay,
+      flavorDescription: records.find(r => r.flavorDescription)?.flavorDescription,
       reviewSummary,
       sentiment,
       yelpUrl: externalUrls.yelpUrl,
@@ -878,6 +913,13 @@ async function fetchCulversLocations(
         state: meta.state || '',
         zipCode: meta.postalCode || '',
         postalCode: meta.postalCode || '',
+        // Culver's is US-only. Without these fields the trpc-router's
+        // country filter ([Router] Filtering results to country US)
+        // drops every Culver's record because countryCode is undefined.
+        // Reproduced live 2026-05-10: worker log shows `Culver's: 10`
+        // scraped, then country filter trims to zero in final response.
+        country: 'United States',
+        countryCode: 'US',
         latitude: lat,
         longitude: lng,
         phone: meta.phone,
