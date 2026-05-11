@@ -43,6 +43,10 @@ import { isRestaurantOpenNow } from "@/utils/hours-utils";
 import { calculateDistance, isValidPostalCode } from "@/utils/geo-utils";
 import { Restaurant } from "@/types/restaurant";
 
+// Mirrors the `height` set in app/(tabs)/_layout.tsx (`49 + insets.bottom`).
+// Keep these in sync — the tab layout owns the canonical value.
+const TAB_BAR_BASE = 49;
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
@@ -335,7 +339,17 @@ export default function HomeScreen() {
   };
 
   return (
-    <ThemedView style={[styles.container, { paddingTop: insets.top + Spacing.sm }]}>
+    <ThemedView
+      style={[
+        styles.container,
+        {
+          paddingTop: insets.top + Spacing.sm,
+          // The bottom tab bar is 49 dp + insets.bottom (see app/(tabs)/_layout.tsx);
+          // reserve that space so the wheel + result overlay never hide behind it.
+          paddingBottom: TAB_BAR_BASE + insets.bottom + Spacing.sm,
+        },
+      ]}
+    >
       {/* Header — compact single row */}
       <View style={styles.header}>
         <ThemedText type="title" style={styles.title}>Foodie Finder</ThemedText>
@@ -479,6 +493,7 @@ export default function HomeScreen() {
           isSpinning={isSpinning}
           onSpinStart={handleSpinStart}
           disabled={filteredRestaurants.length === 0}
+          loading={isFetching && restaurants.length === 0}
           maxSize={Math.min(SCREEN_WIDTH, SCREEN_HEIGHT) - 120}
         />
       </View>
@@ -488,7 +503,16 @@ export default function HomeScreen() {
         <View
           accessibilityLiveRegion="polite"
           accessibilityRole="summary"
-          style={[styles.resultOverlay, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}
+          style={[
+            styles.resultOverlay,
+            {
+              backgroundColor: colors.cardBackground,
+              borderColor: colors.border,
+              // Lift above the tab bar (the wheel's container ignores
+              // paddingBottom for absolute children, so we offset here).
+              bottom: TAB_BAR_BASE + insets.bottom + Spacing.md,
+            },
+          ]}
         >
           <View style={styles.resultHeader}>
             <IconSymbol name="star.fill" size={20} color={AppColors.copper} />
@@ -534,7 +558,16 @@ export default function HomeScreen() {
         <View
           accessibilityLiveRegion="polite"
           accessibilityRole="alert"
-          style={[styles.resultOverlay, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}
+          style={[
+            styles.resultOverlay,
+            {
+              backgroundColor: colors.cardBackground,
+              borderColor: colors.border,
+              // Lift above the tab bar (the wheel's container ignores
+              // paddingBottom for absolute children, so we offset here).
+              bottom: TAB_BAR_BASE + insets.bottom + Spacing.md,
+            },
+          ]}
         >
           <ThemedText style={[styles.noMatchText, { color: colors.warning }]}>
             No matches — try adjusting filters or radius

@@ -197,29 +197,31 @@ export function SpinnerFiltersBar({
           )}
         </Pressable>
         
-        {/* Clear All */}
+      </ScrollView>
+
+      {/* Match count + Clear All — own row so the chip scroll above doesn't
+          get clipped at the right edge on narrow phones. */}
+      <View style={styles.metaRow}>
+        <View style={[styles.matchCount, { backgroundColor: colors.surface }]}>
+          <ThemedText style={[styles.matchText, { color: colors.textSecondary }]}>
+            {matchCount} match{matchCount !== 1 ? "es" : ""}
+          </ThemedText>
+        </View>
         {activeFilterCount > 0 && (
           <Pressable
             onPress={clearFilters}
             focusable
             accessibilityRole="button"
+            accessibilityLabel="Clear all filters"
             style={({ pressed }: { pressed: boolean }) => [
-              styles.chip,
+              styles.clearChip,
               { backgroundColor: colors.error + "20", borderColor: colors.error, opacity: pressed ? 0.9 : 1 },
-
             ]}
           >
             <IconSymbol name="xmark.circle.fill" size={14} color={colors.error} />
             <ThemedText style={[styles.chipText, { color: colors.error }]}>Clear</ThemedText>
           </Pressable>
         )}
-      </ScrollView>
-      
-      {/* Match count */}
-      <View style={[styles.matchCount, { backgroundColor: colors.surface }]}>
-        <ThemedText style={[styles.matchText, { color: colors.textSecondary }]}>
-          {matchCount} match{matchCount !== 1 ? "es" : ""}
-        </ThemedText>
       </View>
       
       {/* Filter Modal */}
@@ -510,16 +512,30 @@ const styles = StyleSheet.create({
   chipPressed: {
     opacity: 0.85,
   },
+  metaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    marginTop: Spacing.xs,
+  },
   matchCount: {
-    alignSelf: "center",
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.full,
-    marginTop: 0,
-    marginBottom: 0,
   },
   matchText: {
     fontSize: 12,
+  },
+  clearChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
   },
   modalContainer: {
     flex: 1,

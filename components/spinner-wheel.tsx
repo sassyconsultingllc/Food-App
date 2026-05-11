@@ -8,7 +8,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
-import { View, StyleSheet, Pressable, useWindowDimensions } from "react-native";
+import { ActivityIndicator, View, StyleSheet, Pressable, useWindowDimensions } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -60,6 +60,9 @@ interface SpinnerWheelProps {
   isSpinning: boolean;
   onSpinStart: () => void;
   disabled?: boolean;
+  /** Show a loading state instead of the empty "Add restaurants to spin!" message
+   *  when a search is in flight and we have no results yet. */
+  loading?: boolean;
   maxSize?: number;
 }
 
@@ -69,6 +72,7 @@ export function SpinnerWheel({
   isSpinning,
   onSpinStart,
   disabled = false,
+  loading = false,
 }: SpinnerWheelProps) {
   const { width: SCREEN_WIDTH } = useWindowDimensions();
   const colorScheme = useColorScheme();
@@ -93,9 +97,13 @@ export function SpinnerWheel({
     };
   }, []);
 
-  // Build a long repeating reel so the scroll can wrap around
+  // Build a long repeating reel so the scroll can wrap around.
+  // No cap — the wheel reflects the full filtered match count so the
+  // user can't "lose" eligible restaurants past an arbitrary slice. For
+  // typical filtered sets (≤ ~100), the resulting reel mount cost is
+  // negligible compared to the spin animation work.
   const displayRestaurants = useMemo(
-    () => restaurants.slice(0, 20),
+    () => restaurants,
     [restaurants],
   );
 
@@ -189,9 +197,26 @@ export function SpinnerWheel({
   if (displayRestaurants.length === 0) {
     return (
       <View style={[styles.container, { width: REEL_WIDTH }]}>
-        <View style={[styles.emptyReel, { height: VIEWPORT_HEIGHT, backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
-          <IconSymbol name="fork.knife" size={48} color={AppColors.slateGray} />
-          <ThemedText style={styles.emptyText}>Add restaurants to spin!</ThemedText>
+        <View
+          accessibilityLiveRegion={loading ? "polite" : "none"}
+          style={[styles.emptyReel, { height: VIEWPORT_HEIGHT, backgroundColor: colors.cardBackground, borderColor: colors.border }]}
+        >
+          {loading ? (
+            <>
+              <ActivityIndicator size="large" color={AppColors.copper} />
+              <ThemedText style={styles.emptyText}>
+                Sifting through nearby spots…
+              </ThemedText>
+              <ThemedText style={styles.emptySubtext}>
+                Hang tight while we pull together the latest data.
+              </ThemedText>
+            </>
+          ) : (
+            <>
+              <IconSymbol name="fork.knife" size={48} color={AppColors.slateGray} />
+              <ThemedText style={styles.emptyText}>Add restaurants to spin!</ThemedText>
+            </>
+          )}
         </View>
       </View>
     );
@@ -512,11 +537,20 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     gap: Spacing.md,
+    paddingHorizontal: Spacing.lg,
     borderRadius: BorderRadius.lg,
     borderWidth: 2,
   },
   emptyText: {
     color: AppColors.slateGray,
     fontSize: 16,
+    textAlign: "center",
+  },
+  emptySubtext: {
+    color: AppColors.slateGray,
+    fontSize: 13,
+    textAlign: "center",
+    opacity: 0.75,
+    marginTop: -Spacing.xs,
   },
 });
