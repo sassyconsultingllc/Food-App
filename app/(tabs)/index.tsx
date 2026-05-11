@@ -714,7 +714,10 @@ const styles = StyleSheet.create({
   wheelFlex: {
     flex: 1,
     alignItems: "center",
-    justifyContent: "center",
+    // Anchor wheel to the top — centering caused the SPIN button (elevation 6)
+    // to overflow upward into the filters bar's metaRow, occluding the match
+    // count + Clear chip on shorter screens.
+    justifyContent: "flex-start",
   },
   resultOverlay: {
     position: "absolute",

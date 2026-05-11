@@ -325,8 +325,8 @@ export default function SettingsScreen() {
           <Pressable 
             style={styles.helpItem}
             onPress={() => {
-              import('expo-linking').then(({ default: Linking }) => 
-                Linking.openURL('mailto:support@sassyconsultingllc.com?subject=Foodie%20Finder%20Support')
+              import('expo-linking').then(({ default: Linking }) =>
+                Linking.openURL('https://sassyconsultingllc.com/app-testers')
               );
             }}
             accessibilityLabel="Contact Support"
