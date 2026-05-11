@@ -270,16 +270,31 @@ export default function RestaurantDetailScreen() {
       >
         {/* Restaurant Name & Type */}
         <View style={styles.titleSection}>
-          <ThemedText type="title" style={styles.restaurantName}>
+          <ThemedText type="title" style={styles.restaurantName} numberOfLines={2}>
             {restaurant.name}
           </ThemedText>
-          <View style={styles.cuisineRow}>
-            <ThemedText style={[styles.cuisineType, { color: colors.textSecondary }]}>
-              {restaurant.cuisineType}
-            </ThemedText>
+          <View style={styles.metaRow}>
+            {restaurant.cuisineType ? (
+              <ThemedText style={[styles.cuisineType, { color: colors.textSecondary }]} numberOfLines={1}>
+                {restaurant.cuisineType}
+              </ThemedText>
+            ) : null}
+            {restaurant.priceRange ? (
+              <ThemedText style={[styles.metaPrice, { color: colors.accent }]} numberOfLines={1}>
+                · {restaurant.priceRange}
+              </ThemedText>
+            ) : null}
+            {restaurant.distance !== undefined && (
+              <View style={styles.metaDistance}>
+                <IconSymbol name="mappin.and.ellipse" size={14} color={colors.textSecondary} />
+                <ThemedText style={[styles.metaDistanceText, { color: colors.textSecondary }]}>
+                  {restaurant.distance.toFixed(1)} mi
+                </ThemedText>
+              </View>
+            )}
             {(restaurant.ratings?.aggregated ?? 0) > 0 && (
               <View style={[styles.ratingBadgeLarge, { backgroundColor: AppColors.skyBlue }]}>
-                <IconSymbol name="star.fill" size={16} color={AppColors.white} />
+                <IconSymbol name="star.fill" size={14} color={AppColors.white} />
                 <ThemedText style={styles.ratingTextLarge}>
                   {restaurant.ratings!.aggregated.toFixed(1)}
                 </ThemedText>
@@ -423,6 +438,7 @@ export default function RestaurantDetailScreen() {
         <MenuSection
           restaurantId={restaurant.id}
           restaurantName={restaurant.name}
+          website={restaurant.website || restaurant.menu?.url}
           menuUrl={restaurant.menu?.url}
           menuPhotos={classifiedMenuPhotos}
           classifying={classifyingPhotos}
@@ -677,8 +693,10 @@ export default function RestaurantDetailScreen() {
             </ThemedText>
             
             {restaurant.phone && (
-              <Pressable 
+              <Pressable
                 onPress={() => handlePhonePress()}
+                accessibilityRole="button"
+                accessibilityLabel="Call to order"
                 style={styles.orderOption}
               >
                 <IconSymbol name="phone.fill" size={20} color={colors.accent} />
@@ -686,10 +704,12 @@ export default function RestaurantDetailScreen() {
                 <IconSymbol name="chevron.right" size={20} color={colors.textSecondary} />
               </Pressable>
             )}
-            
+
             {restaurant.website && (
-              <Pressable 
+              <Pressable
                 onPress={() => safeOpenUrl(restaurant.website)}
+                accessibilityRole="link"
+                accessibilityLabel="Order direct from restaurant website"
                 style={styles.orderOption}
               >
                 <IconSymbol name="globe" size={20} color={colors.accent} />
@@ -697,10 +717,12 @@ export default function RestaurantDetailScreen() {
                 <IconSymbol name="chevron.right" size={20} color={colors.textSecondary} />
               </Pressable>
             )}
-            
+
             {restaurant.doordashUrl && (
-              <Pressable 
+              <Pressable
                 onPress={() => safeOpenUrl(restaurant.doordashUrl)}
+                accessibilityRole="link"
+                accessibilityLabel="Find on DoorDash"
                 style={styles.orderOption}
               >
                 <IconSymbol name="car.fill" size={20} color="#FF3008" />
@@ -708,10 +730,12 @@ export default function RestaurantDetailScreen() {
                 <IconSymbol name="chevron.right" size={20} color={colors.textSecondary} />
               </Pressable>
             )}
-            
+
             {restaurant.ubereatsUrl && (
-              <Pressable 
+              <Pressable
                 onPress={() => safeOpenUrl(restaurant.ubereatsUrl)}
+                accessibilityRole="link"
+                accessibilityLabel="Find on Uber Eats"
                 style={styles.orderOption}
               >
                 <IconSymbol name="car.fill" size={20} color="#06C167" />
@@ -719,10 +743,12 @@ export default function RestaurantDetailScreen() {
                 <IconSymbol name="chevron.right" size={20} color={colors.textSecondary} />
               </Pressable>
             )}
-            
+
             {restaurant.grubhubUrl && (
-              <Pressable 
+              <Pressable
                 onPress={() => safeOpenUrl(restaurant.grubhubUrl)}
+                accessibilityRole="link"
+                accessibilityLabel="Find on Grubhub"
                 style={styles.orderOption}
               >
                 <IconSymbol name="car.fill" size={20} color="#F63440" />
@@ -821,9 +847,9 @@ const styles = StyleSheet.create({
   },
   headerButton: {
     position: "absolute",
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: AppColors.white,
     justifyContent: "center",
     alignItems: "center",
@@ -837,7 +863,7 @@ const styles = StyleSheet.create({
     left: Spacing.md,
   },
   shareHeaderButton: {
-    right: Spacing.md + 48,
+    right: Spacing.md + 52,
   },
   favoriteHeaderButton: {
     right: Spacing.md,
@@ -856,27 +882,40 @@ const styles = StyleSheet.create({
     fontSize: 28,
     lineHeight: 34,
   },
-  cuisineRow: {
+  metaRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: Spacing.sm,
     marginTop: Spacing.xs,
   },
   cuisineType: {
-    fontSize: 16,
+    fontSize: 15,
+  },
+  metaPrice: {
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  metaDistance: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  metaDistanceText: {
+    fontSize: 13,
   },
   ratingBadgeLarge: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: BorderRadius.sm,
+    gap: 4,
   },
   ratingTextLarge: {
     color: AppColors.white,
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: "700",
-    marginLeft: 4,
   },
   section: {
     marginHorizontal: Spacing.md,
@@ -942,6 +981,7 @@ const styles = StyleSheet.create({
   contactRow: {
     flexDirection: "row",
     alignItems: "center",
+    minHeight: 44,
     paddingVertical: Spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: AppColors.lightGray,
@@ -1016,6 +1056,7 @@ const styles = StyleSheet.create({
   similarItem: {
     flexDirection: "row",
     alignItems: "center",
+    minHeight: 72,
     paddingVertical: Spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
@@ -1077,6 +1118,7 @@ const styles = StyleSheet.create({
   orderOption: {
     flexDirection: "row",
     alignItems: "center",
+    minHeight: 44,
     paddingVertical: Spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: AppColors.lightGray,

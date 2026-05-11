@@ -209,6 +209,11 @@ export function useRestaurantStorage() {
 
   const loading = prefsLoading || (!cacheLoaded && restaurants.length === 0) || (searchQuery.isLoading && restaurants.length === 0);
 
+  // `loading` only flips when the list is empty, so a re-search (e.g. user
+  // bumps radius) is invisible to the UI. Expose `isFetching` so callers can
+  // surface a small "searching…" affordance during the background refetch.
+  const isFetching = searchQuery.isFetching;
+
   // Cache restaurants locally. Deferred via InteractionManager so the list
   // paint finishes before we spend ~100-400ms JSON.stringify'ing 50
   // restaurants worth of photos + hours + reviews.
@@ -805,6 +810,7 @@ export function useRestaurantStorage() {
     restaurants,
     preferences,
     loading,
+    isFetching,
     error: restaurantsError,
     cuisineTypes,
     savePreferences,

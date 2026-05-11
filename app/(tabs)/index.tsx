@@ -73,6 +73,7 @@ export default function HomeScreen() {
     preferences,
     savePreferences,
     searchWithNewParams,
+    isFetching,
   } = useRestaurantStorage();
 
   // Spin history for exclusion
@@ -312,6 +313,17 @@ export default function HomeScreen() {
     }
   };
 
+  // Bypass debounce for a user-initiated refresh — fires the search NOW.
+  const handleManualRefresh = useCallback(() => {
+    if (!zipCode || !isValidPostalCode(zipCode)) return;
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = null;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    searchWithNewParams(zipCode, radius);
+  }, [zipCode, radius, searchWithNewParams]);
+
   const handleZipCodeChange = (text: string) => {
     setZipCode(text);
     setLocationName(null);
@@ -335,7 +347,7 @@ export default function HomeScreen() {
         />
       </View>
 
-      {/* Zip + GPS + Radius — single compact row */}
+      {/* Row 1 — zip input + GPS */}
       <View style={styles.searchRow}>
         <View style={[styles.inputContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <IconSymbol name="mappin.and.ellipse" size={18} color={colors.accent} />
@@ -372,6 +384,10 @@ export default function HomeScreen() {
             <IconSymbol name="location.fill" size={18} color={AppColors.white} />
           )}
         </Pressable>
+      </View>
+
+      {/* Row 2 — radius controls + manual refresh */}
+      <View style={styles.radiusRow}>
         <View style={styles.radiusInline}>
           <Pressable
             onPress={() => handleRadiusChange(-1)}
@@ -384,9 +400,15 @@ export default function HomeScreen() {
           >
             <IconSymbol name="minus" size={16} color={colors.accent} />
           </Pressable>
-          <ThemedText style={[styles.radiusText, { color: colors.accent }]}>
-            {radius} mi
-          </ThemedText>
+          <View style={styles.radiusTextWrap}>
+            {isFetching ? (
+              <ActivityIndicator size="small" color={colors.accent} />
+            ) : (
+              <ThemedText style={[styles.radiusText, { color: colors.accent }]}>
+                {radius} mi
+              </ThemedText>
+            )}
+          </View>
           <Pressable
             onPress={() => handleRadiusChange(1)}
             accessibilityLabel="Increase search radius"
@@ -399,6 +421,29 @@ export default function HomeScreen() {
             <IconSymbol name="plus" size={16} color={colors.accent} />
           </Pressable>
         </View>
+        <Pressable
+          onPress={handleManualRefresh}
+          disabled={!zipCode || !isValidPostalCode(zipCode) || isFetching}
+          accessibilityLabel="Refresh restaurants"
+          accessibilityRole="button"
+          style={({ pressed }: { pressed: boolean }) => [
+            styles.refreshButton,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              opacity: pressed ? 0.85 : (!zipCode || isFetching ? 0.5 : 1),
+            },
+          ]}
+        >
+          {isFetching ? (
+            <ActivityIndicator size="small" color={colors.accent} />
+          ) : (
+            <>
+              <IconSymbol name="arrow.clockwise" size={14} color={colors.accent} />
+              <ThemedText style={[styles.refreshButtonText, { color: colors.accent }]}>Refresh</ThemedText>
+            </>
+          )}
+        </Pressable>
       </View>
 
       {/* Location / error feedback */}
@@ -440,7 +485,11 @@ export default function HomeScreen() {
 
       {/* Result overlay after spin */}
       {selectedRestaurant && !isSpinning && (
-        <View style={[styles.resultOverlay, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
+        <View
+          accessibilityLiveRegion="polite"
+          accessibilityRole="summary"
+          style={[styles.resultOverlay, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}
+        >
           <View style={styles.resultHeader}>
             <IconSymbol name="star.fill" size={20} color={AppColors.copper} />
             <ThemedText type="defaultSemiBold" style={styles.resultTitle}>
@@ -482,7 +531,11 @@ export default function HomeScreen() {
 
       {/* No matches feedback */}
       {hasSpun && !isSpinning && !selectedRestaurant && (
-        <View style={[styles.resultOverlay, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
+        <View
+          accessibilityLiveRegion="polite"
+          accessibilityRole="alert"
+          style={[styles.resultOverlay, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}
+        >
           <ThemedText style={[styles.noMatchText, { color: colors.warning }]}>
             No matches — try adjusting filters or radius
           </ThemedText>
@@ -542,6 +595,7 @@ const styles = StyleSheet.create({
   },
   inputContainer: {
     flex: 1,
+    minWidth: 0,
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: Spacing.sm,
@@ -552,37 +606,67 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
+    minWidth: 0,
     fontSize: 15,
     paddingVertical: 4,
   },
   gpsButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: BorderRadius.md,
     justifyContent: "center",
     alignItems: "center",
+    flexShrink: 0,
   },
   gpsButtonDisabled: {
     opacity: 0.7,
   },
+  radiusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: Spacing.xs,
+    marginBottom: Spacing.xs,
+  },
   radiusInline: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: Spacing.xs,
+    flexShrink: 0,
   },
   radiusBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: BorderRadius.sm,
+    width: 44,
+    height: 44,
+    borderRadius: BorderRadius.full,
     borderWidth: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  radiusTextWrap: {
+    minWidth: 56,
+    height: 44,
     justifyContent: "center",
     alignItems: "center",
   },
   radiusText: {
     fontSize: 14,
     fontWeight: "700",
-    minWidth: 40,
     textAlign: "center",
+  },
+  refreshButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    height: 44,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    flexShrink: 0,
+  },
+  refreshButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
   },
   locationFeedback: {
     flexDirection: "row",
