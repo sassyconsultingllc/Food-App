@@ -60,3 +60,8 @@ scripts/test-*.ts
 Notepad.txt
 *.tex
 *.pdf
+
+# Local build/diag noise that never belongs in the EAS upload
+*.log
+diag/
+diag_*.txt
