@@ -135,6 +135,15 @@ android {
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
             def enablePngCrunchInRelease = findProperty('android.enablePngCrunchInReleaseBuilds') ?: 'true'
             crunchPngs enablePngCrunchInRelease.toBoolean()
+            // Bundle native debug symbols (function names only — SYMBOL_TABLE
+            // adds ~2 MB to the AAB but is enough for Play Console to
+            // symbolicate native crashes inside libhermes.so, libreactnativejni.so,
+            // libreanimated.so, etc. Use 'FULL' for line numbers too (~10 MB).
+            // Without this, Play Console reports "no debug symbols" on every
+            // release and native stack traces show raw offsets.
+            ndk {
+                debugSymbolLevel 'SYMBOL_TABLE'
+            }
         }
     }
     packagingOptions {
