@@ -26,11 +26,11 @@
 Create and host these pages before submission:
 
 - [x] **Privacy Policy** - Required by both stores
-  - URL: `https://privacy.sassyconsultingllc.com/foodie-finder`
+  - URL: `https://sassyconsultingllc.com/privacy/foodie-finder`
   - Must disclose: data collection, usage, third-party sharing, user rights
   
 - [ ] **Terms of Service** - Recommended
-  - URL: `https://privacy.sassyconsultingllc.com/foodie-finder/terms`
+  - URL: `https://sassyconsultingllc.com/privacy/foodie-finder/terms`
 
 ### 3. App Assets Verification
 
@@ -66,8 +66,8 @@ All assets are in `./assets/images/`:
 ```bash
 # Set these in EAS Secrets (https://expo.dev/accounts/[your-account]/projects/foodie-finder/secrets)
 EXPO_PUBLIC_LICENSE_SERVER_URL=https://your-deployed-server.com
-EXPO_PUBLIC_PRIVACY_POLICY_URL=https://privacy.sassyconsultingllc.com/foodie-finder
-EXPO_PUBLIC_TERMS_URL=https://privacy.sassyconsultingllc.com/foodie-finder/terms
+EXPO_PUBLIC_PRIVACY_POLICY_URL=https://sassyconsultingllc.com/privacy/foodie-finder
+EXPO_PUBLIC_TERMS_URL=https://sassyconsultingllc.com/privacy/foodie-finder/terms
 
 # App Store submission credentials
 APPLE_ID=your-apple-id@example.com

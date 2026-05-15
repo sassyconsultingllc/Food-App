@@ -122,7 +122,7 @@ We may update this privacy policy from time to time. We will notify you of any c
 If you have questions about this privacy policy, please contact us:
 
 **Email:** info@sassyconsultingllc.com  
-**Website:** https://privacy.sassyconsultingllc.com/foodie-finder
+**Website:** https://sassyconsultingllc.com/privacy/foodie-finder
 
 ## California Residents
 

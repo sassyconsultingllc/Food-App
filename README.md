@@ -267,7 +267,7 @@ Proprietary. © 2025-2026 Sassy Consulting LLC. All rights reserved.
 
 **Email:** info@sassyconsultingllc.com
 **Website:** https://sassyconsultingllc.com
-**Privacy Policy:** https://privacy.sassyconsultingllc.com/foodie-finder
+**Privacy Policy:** https://sassyconsultingllc.com/privacy/foodie-finder
 
 ---
 

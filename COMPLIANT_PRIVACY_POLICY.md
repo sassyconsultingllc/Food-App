@@ -311,7 +311,7 @@ We will not discriminate against you for exercising your privacy rights, includi
 If you have questions about this privacy policy or want to exercise your rights, please contact us:
 
 **Email:** info@sassyconsultingllc.com
-**Website:** https://privacy.sassyconsultingllc.com/foodie-finder
+**Website:** https://sassyconsultingllc.com/privacy/foodie-finder
 **Privacy Officer:** Available at the above email for GDPR-related inquiries
 
 ## California Residents

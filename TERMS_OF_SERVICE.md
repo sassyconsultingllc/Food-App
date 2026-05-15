@@ -207,7 +207,7 @@ Questions about these Terms? Contact us:
 
 **Email:** info@sassyconsultingllc.com
 **Website:** https://sassyconsultingllc.com
-**Privacy Policy:** https://privacy.sassyconsultingllc.com/foodie-finder
+**Privacy Policy:** https://sassyconsultingllc.com/privacy/foodie-finder
 
 ---
 
