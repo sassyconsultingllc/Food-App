@@ -3,9 +3,24 @@
  * © 2025 Sassy Consulting - A Veteran Owned Company
  */
 
+import Constants from "expo-constants";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import React, { useState, useEffect } from "react";
+
+// Single source of truth: version + legal URLs come from app.config.ts
+// (which itself reads EXPO_PUBLIC_PRIVACY_POLICY_URL / EXPO_PUBLIC_TERMS_URL
+// at build time via eas.json). Falls back to the canonical hosted URLs
+// if the extra block is missing for some reason.
+const APP_VERSION = Constants.expoConfig?.version ?? "1.0.2";
+const PRIVACY_URL =
+  ((Constants.expoConfig?.extra as Record<string, unknown> | undefined)
+    ?.privacyPolicyUrl as string | undefined) ??
+  "https://sassyconsultingllc.com/privacy/foodie-finder/";
+const TERMS_URL =
+  ((Constants.expoConfig?.extra as Record<string, unknown> | undefined)
+    ?.termsOfServiceUrl as string | undefined) ??
+  "https://sassyconsultingllc.com/privacy/foodie-finder/terms";
 import {
   Pressable,
   ScrollView,
@@ -248,7 +263,7 @@ export default function SettingsScreen() {
               Foodie Finder
             </ThemedText>
             <ThemedText style={[styles.appVersion, { color: colors.textSecondary }]}>
-              Version 1.0.0
+              Version {APP_VERSION}
             </ThemedText>
           </View>
 
@@ -344,11 +359,11 @@ export default function SettingsScreen() {
             Legal
           </ThemedText>
 
-          <Pressable 
+          <Pressable
             style={styles.helpItem}
             onPress={() => {
-              import('expo-linking').then(({ default: Linking }) => 
-                Linking.openURL('https://sassyconsultingllc.com/privacy/foodie-finder/')
+              import('expo-linking').then(({ default: Linking }) =>
+                Linking.openURL(PRIVACY_URL)
               );
             }}
             accessibilityLabel="Privacy Policy"
@@ -359,11 +374,11 @@ export default function SettingsScreen() {
             <IconSymbol name="chevron.right" size={20} color={colors.textSecondary} />
           </Pressable>
 
-          <Pressable 
+          <Pressable
             style={styles.helpItem}
             onPress={() => {
-              import('expo-linking').then(({ default: Linking }) => 
-                Linking.openURL('https://sassyconsultingllc.com/privacy/foodie-finder/terms.html')
+              import('expo-linking').then(({ default: Linking }) =>
+                Linking.openURL(TERMS_URL)
               );
             }}
             accessibilityLabel="Terms of Service"

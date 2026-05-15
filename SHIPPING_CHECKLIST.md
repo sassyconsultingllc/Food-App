@@ -190,6 +190,6 @@ pnpm worker:deploy:prod
 
 ## Support
 
-For questions about deployment, contact: support@sassyconsulting.com
+For questions about deployment, contact: info@sassyconsultingllc.com
 
 *© 2025-2026 Sassy Consulting - A Veteran Owned Company*

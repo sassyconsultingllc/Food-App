@@ -1,0 +1,8 @@
+What's new in 1.0.2:
+• Fixed splash screen sometimes staying stuck on app launch
+• Restaurant detail now auto-discovers the real menu page or PDF
+• Spinner wheel no longer covers the filter chips while spinning
+• Contact Support now opens our tester signup page
+• Reliability and performance polish
+
+Privacy policy: https://sassyconsultingllc.com/privacy/foodie-finder/
