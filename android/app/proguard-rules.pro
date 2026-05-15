@@ -20,7 +20,12 @@
 -keep class com.facebook.react.modules.network.** { *; }
 -keep class com.facebook.react.modules.image.** { *; }
 -keep class com.facebook.jni.** { *; }
--keep class com.facebook.proguard.annotations.DoNotStrip class *
+# Keep the @DoNotStrip annotation interface at runtime so R8 can read it,
+# and keep every class/member it tags. Line 23 used to read
+#   -keep class com.facebook.proguard.annotations.DoNotStrip class *
+# which is malformed: R8 parses "-keep class <FQCN>" then trips on the
+# trailing "class *" (column 58 → vc9 build failure). The two rules
+# below replace it correctly.
 -keep,allowobfuscation @interface com.facebook.proguard.annotations.DoNotStrip
 -keep @com.facebook.proguard.annotations.DoNotStrip class *
 -keepclassmembers class * {
