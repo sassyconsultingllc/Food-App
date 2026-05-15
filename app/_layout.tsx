@@ -1,8 +1,17 @@
 import { DarkTheme, DefaultTheme, ThemeProvider as NavigationThemeProvider } from "@react-navigation/native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
+
+// `expo-splash-screen` plugin auto-calls preventAutoHideAsync() at boot.
+// Without an explicit hideAsync() the native splash stays forever — that's
+// the bug that stuck the 03:20 release on the splash screen. Hiding it
+// once the React tree mounts in RootLayoutContent (below).
+SplashScreen.preventAutoHideAsync().catch(() => {
+  // already prevented by the plugin; ignore
+});
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
 import { Platform, View, ActivityIndicator, Text, StyleSheet } from "react-native";
@@ -50,6 +59,17 @@ function RootLayoutContent() {
 
   const [insets, setInsets] = useState<EdgeInsets>(initialInsets);
   const [frame, setFrame] = useState<Rect>(initialFrame);
+
+  // Dismiss the native splash now that the React tree is mounting.
+  // Runs on the next frame so first paint has actual UI behind the fade.
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      SplashScreen.hideAsync().catch(() => {
+        // already hidden; ignore
+      });
+    });
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   // Play app-open sound on first mount
   const { playSound } = useAppSounds(true);

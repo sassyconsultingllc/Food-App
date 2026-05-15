@@ -1,6 +1,8 @@
 # Foodie Finder - Shipping Checklist
 
-© 2025 Sassy Consulting - A Veteran Owned Company
+© 2025-2026 Sassy Consulting - A Veteran Owned Company
+
+**Last Updated:** 2026-05-15 | **App Version:** 1.0.2 | **Package:** com.sassyconsultingllc.foodiefinder
 
 ## Pre-Submission Checklist
 
@@ -73,14 +75,16 @@ ASC_APP_ID=your-app-store-connect-app-id
 APPLE_TEAM_ID=your-apple-team-id
 ```
 
-### 6. Backend Deployment
+### 6. Backend Deployment (Cloudflare Workers)
 
-- [ ] Deploy server to production (Railway, Render, AWS, etc.)
-- [ ] Set up production database (MySQL/PostgreSQL)
-- [ ] Configure Redis for production
-- [ ] Set up SSL certificates
-- [ ] Configure environment variables on server
-- [ ] Test all API endpoints
+- [ ] Deploy Cloudflare Worker to production (`npx wrangler deploy --env=production`)
+- [ ] Create D1 database (`foodie-finder`) and run schema (`worker/schema.sql`)
+- [ ] Create KV namespaces (`FOODIE_PUBLIC_NOTES`, `RATE_LIMIT`)
+- [ ] Create R2 bucket (`MENU_PHOTOS`)
+- [ ] Set up Vectorize index for semantic search
+- [ ] Set secrets via `wrangler secret put` (GOOGLE_PLACES_API_KEY, FOURSQUARE_API_KEY, HERE_API_KEY, JWT_SECRET)
+- [ ] Test all tRPC endpoints
+- [ ] Verify content moderation and rate limiting work in production
 
 ### 7. Build & Submit Commands
 
@@ -120,14 +124,22 @@ npx eas submit --platform ios
 - [ ] Test on physical Android device
 - [ ] Test on physical iOS device (TestFlight)
 - [ ] Verify all features work:
-  - [ ] Random restaurant picker
+  - [ ] Random restaurant picker (spinner wheel with filters)
   - [ ] GPS location detection
-  - [ ] Browse and filter restaurants
+  - [ ] Browse and filter restaurants (cuisine, price, dietary, open now)
+  - [ ] Natural-language semantic search
   - [ ] Favorites save/remove
-  - [ ] Restaurant details load
+  - [ ] Taste-based recommendations (in your area + travel)
+  - [ ] Restaurant details load (photos, menu section, community tips)
+  - [ ] Community tips post and display
+  - [ ] Personal notes (on-device)
+  - [ ] Menu photo classification (Google Vision)
+  - [ ] Google Maps share import
   - [ ] Share functionality
   - [ ] Dark mode toggle
+  - [ ] Sound settings
   - [ ] Settings persistence
+  - [ ] Culver's Flavor of the Day calendar
 - [ ] Test offline behavior
 - [ ] Test on different screen sizes
 
@@ -152,17 +164,26 @@ npx eas submit --platform ios
 # Install dependencies
 pnpm install
 
-# Run tests
+# Run tests (22 test files, Vitest 4.x)
 pnpm test
 
-# Type check
+# Type check (TypeScript 5.9.3)
 pnpm check
 
-# Start development
+# Lint
+pnpm lint
+
+# Start development (Metro bundler + local tRPC server)
 pnpm dev
+
+# Start Cloudflare Worker local dev
+pnpm worker:dev
 
 # Build production
 npx eas build --profile production --platform all
+
+# Deploy Cloudflare Worker
+pnpm worker:deploy:prod
 ```
 
 ---
@@ -171,4 +192,4 @@ npx eas build --profile production --platform all
 
 For questions about deployment, contact: support@sassyconsulting.com
 
-*© 2025 Sassy Consulting - A Veteran Owned Company*
+*© 2025-2026 Sassy Consulting - A Veteran Owned Company*

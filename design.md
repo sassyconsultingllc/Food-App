@@ -1,9 +1,11 @@
 # Foodie Finder - Mobile App Design Document
 
-© 2025 Sassy Consulting - A Veteran Owned Company
+© 2025-2026 Sassy Consulting - A Veteran Owned Company
+
+**Last Updated:** 2026-05-15
 
 ## Overview
-Foodie Finder is a lightweight mobile app for foodies and travelers to discover local restaurants, view daily specials, and use a fun random restaurant picker. The app aggregates ratings from multiple sources and provides quick, accessible information for users who aren't technically inclined.
+Foodie Finder is a cross-platform mobile app (iOS and Android) for foodies and travelers to discover local restaurants, view daily specials, and use a fun random restaurant picker. The app aggregates ratings from multiple real-world sources (Google Places, Foursquare, HERE Maps, OpenStreetMap), classifies menu photos via Google Vision, offers natural-language semantic search, community tips with content moderation, and taste-based recommendations for home and travel. Built with React Native / Expo SDK 54 and a Cloudflare Workers backend.
 
 ## Target Audience
 - Local foodies looking for dining variety
@@ -78,25 +80,32 @@ Browse all indexed restaurants in the area.
 Full information about a selected restaurant.
 
 **Primary Content:**
-- Restaurant header image (if available)
+- Photo carousel with fullscreen modal (food photos) and separate menu section (classified menu photos via Google Vision OCR)
 - Restaurant name and cuisine type
 - Address with map link
 - Phone number (tappable)
 - Website link
 - **Daily Special** section (highlighted)
-- **Culvers Flavor of the Day** (for Culvers locations)
+- **Culvers Flavor of the Day** (for Culvers locations, with calendar component)
 - **Aggregated Rating** section:
   - Overall score
-  - Individual source ratings (Yelp, Facebook, Website)
-  - Rating breakdown visualization
-- Brief restaurant description/info
+  - Individual source ratings (Google, Foursquare, Yelp, Facebook, Website)
+  - Sentiment analysis summary (400+ phrase dictionary)
+- **Community Tips** section (public notes from other diners, content-moderated)
+- **Personal Notes** modal (on-device, private)
+- **Ordering Options** (Call, Direct, DoorDash, UberEats, Grubhub)
+- Share button with native share sheet
+- Parking info and hours of operation
 
 ### 4. Favorites Screen
-User's saved favorite restaurants.
+User's saved favorite restaurants with taste-based recommendations.
 
 **Primary Content:**
 - List of favorited restaurants
 - Quick access to randomize from favorites only
+- **Taste-based recommendations:**
+  - "In Your Area" -- similar spots you haven't tried yet
+  - "When You Travel" -- matches in cities far from home (cross-locale matching via favorites centroid + geographic radius)
 - Empty state with prompt to add favorites
 
 ### 5. Settings Screen
@@ -156,9 +165,18 @@ App configuration options.
 ```
 Tab Bar (Bottom)
 ├── Home (Random Picker) - house.fill icon
+│   └── Spinner wheel with cuisine/price/distance filters
 ├── Browse (Restaurant List) - magnifyingglass icon
+│   └── AI semantic search bar + filter chips
 ├── Favorites - heart.fill icon
+│   └── Taste-based recommendations (In Your Area + Travel)
 └── Settings - gearshape.fill icon
+    └── Sound settings, theme toggle, data management
+
+Other Screens:
+├── Restaurant Detail [id] - Full info, photos, menu, community tips, personal notes
+├── OAuth Callback - Authentication redirect handler
+└── Modal - General-purpose modal screen
 ```
 
 ---
@@ -225,6 +243,7 @@ Tab Bar (Bottom)
 ## Data Requirements
 
 ### Restaurant Object
+See `types/restaurant.ts` for the full definition. Key fields include:
 ```typescript
 interface Restaurant {
   id: string;
@@ -237,18 +256,28 @@ interface Restaurant {
   latitude: number;
   longitude: number;
   isCulvers: boolean;
+  priceRange?: string;          // $, $$, $$$, $$$$
+  dietaryOptions?: string[];    // Vegetarian, Vegan, Gluten-Free, Halal, Kosher, Dairy-Free, Nut-Free, Keto, Low-Carb
   dailySpecial?: {
     title: string;
     description: string;
     validDate: string;
   };
   ratings: {
+    google?: number;
+    foursquare?: number;
     yelp?: number;
     facebook?: number;
     website?: number;
     aggregated: number;
   };
-  flavorOfTheDay?: string; // Culvers only
+  sentimentSummary?: string;    // "Highly Recommended", "Mixed Reviews", "Proceed with Caution"
+  flavorOfTheDay?: string;      // Culvers only
+  photos?: string[];            // Photo URLs for carousel
+  menuLinks?: string[];         // External menu links
+  orderingOptions?: OrderingOption[];
+  hours?: Record<string, string>;
+  parkingInfo?: string;
   description?: string;
   imageUrl?: string;
   isFavorite: boolean;
@@ -279,6 +308,8 @@ interface UserPreferences {
 
 ## Copyright Notice
 
-© 2025 Sassy Consulting - A Veteran Owned Company
+© 2025-2026 Sassy Consulting - A Veteran Owned Company
 
 All rights reserved. This application and its design are proprietary to Sassy Consulting.
+
+**Current Implementation Stats (2026-05-15):** 9 screens, 18 components, 20 hooks, 8 utility modules, ~145 source files total. Backend: Cloudflare Workers with D1, KV, R2, Vectorize, and Workers AI.

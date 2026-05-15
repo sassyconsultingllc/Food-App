@@ -1,6 +1,8 @@
 # Backend Development Guide
 
-This guide covers server-side features including authentication, database, tRPC API, and integrations. **Only read this if your app needs these capabilities.**
+**Last Updated:** 2026-05-15
+
+This guide covers server-side features including database, tRPC API, and integrations. The local dev server (`server/`) mirrors the Cloudflare Worker (`worker/`) routes so you can iterate without Cloudflare. The server directory contains 30 files including scrapers, RAG pipeline, metrics, and admin routes.
 
 ---
 
@@ -10,9 +12,14 @@ This guide covers server-side features including authentication, database, tRPC 
 |----------|-----------------|----------|
 | Data stays on device only | No | Use `AsyncStorage` |
 | Data syncs across devices | Yes | Database + tRPC |
-| User accounts / login | No | Not applicable |
+| User accounts / login | No | Not applicable (no auth in current version) |
+| Restaurant data scraping | Yes | Multi-source scraper (Google Places, Foursquare, HERE, OSM) |
+| Community tips | Yes | KV storage + content guard + rate limiting |
+| Menu photo uploads | Yes | R2 storage |
+| Semantic search | Yes | Vectorize + Workers AI embeddings |
+| RAG data enrichment | Yes | LangChain + BullMQ pipeline |
+| Metrics/monitoring | Yes | Prometheus + Grafana |
 | AI-powered features | Yes | LLM Integration |
-| User uploads files | Yes | S3 Storage |
 | Server-side validation | Yes | tRPC procedures |
 
 ---

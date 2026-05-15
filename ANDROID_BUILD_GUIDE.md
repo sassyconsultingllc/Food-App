@@ -2,9 +2,9 @@
 ## Complete Guide to Building APK/AAB with Expo EAS Build
 
 **App:** Foodie Finder  
-**Version:** 1.0.0  
+**Version:** 1.0.2  
 **Package:** com.sassyconsultingllc.foodiefinder  
-**Date:** January 14, 2025
+**Date:** January 14, 2025 | **Last Updated:** 2026-05-15
 
 ---
 
@@ -12,24 +12,22 @@
 
 ### Required Installations
 ```bash
-# Node.js 18+ (check version)
+# Node.js 20+ (Node 24 also works)
 node --version
 
-# pnpm (package manager)
+# pnpm (package manager - project is pnpm-native)
 npm install -g pnpm
-
-# Expo CLI
-npm install -g expo-cli
 
 # EAS CLI (for building)
 npm install -g eas-cli
+
+# Wrangler CLI (installed via project deps, for backend)
 ```
 
 ### Verify Installation
 ```bash
-node --version    # Should be 18.0.0+
-pnpm --version    # Should be 9.12.0+
-expo --version    # Should be latest
+node --version    # Should be 20.0.0+
+pnpm --version    # Should be 9.x+
 eas --version     # Should be latest
 ```
 
@@ -109,8 +107,11 @@ cd "V:\Projects\foodie-finder v8"
 # Install all dependencies
 pnpm install
 
-# Check for TypeScript errors
+# Check for TypeScript errors (TypeScript 5.9.3)
 pnpm check
+
+# Run tests (Vitest 4.x, 22 test files)
+pnpm test
 
 # Verify build configuration
 cat eas.json

@@ -1,6 +1,8 @@
 # Monitoring: Grafana & Prometheus
 
-This folder contains a ready-made Grafana dashboard and suggested Prometheus alerting rules for the RAG job metrics.
+**Last Updated:** 2026-05-15
+
+This folder contains a ready-made Grafana dashboard and suggested Prometheus alerting rules for the RAG job metrics. The app exposes Prometheus metrics via `server/metrics.ts` and the admin HTTP endpoint in `server/admin-http.ts`. There are 10 test files covering metrics collection, push metrics, and queue metrics.
 
 Files:
 - `grafana/foodie-rag-dashboard.json` — Grafana dashboard you can import (Prometheus datasource assumed).

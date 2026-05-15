@@ -1,6 +1,8 @@
 # Foodie Finder - Project TODO
 
-© 2025 Sassy Consulting - A Veteran Owned Company
+© 2025-2026 Sassy Consulting - A Veteran Owned Company
+
+**Last Updated:** 2026-05-15
 
 ## Core Features
 
@@ -158,6 +160,27 @@
 - [x] Create dietary filter chips (Vegan, Vegetarian, Gluten-Free, etc.)
 - [x] Filter restaurants by dietary options
 - [x] Display dietary badges on restaurant cards
+
+## v8 Features (2026)
+
+- [x] Cloudflare Workers backend (Hono + tRPC, D1, KV, R2)
+- [x] Natural-language semantic search (Vectorize + Workers AI)
+- [x] Community tips with content moderation (content-guard.ts)
+- [x] Per-IP rate limiting on write endpoints (KV-based)
+- [x] PII auto-scrub on user-generated content
+- [x] Menu photo classification via Google Vision OCR
+- [x] User menu photo uploads (R2 storage)
+- [x] Taste-based recommendations from favorites
+- [x] Cross-locale travel matching (haversine, not city-name strings)
+- [x] Google Maps share import handler
+- [x] Spinner wheel with filters (cuisine, price, distance)
+- [x] Personal notes (on-device, private)
+- [x] RAG pipeline for restaurant data enrichment (LangChain + BullMQ)
+- [x] Prometheus metrics + Grafana dashboard
+- [x] Culver's Flavor of the Day calendar component
+- [x] Sound effects management
+- [x] Spin history tracking
+- [x] Multi-source scraping (Google Places, Foursquare, HERE, OSM)
 
 ## Future Enhancements
 

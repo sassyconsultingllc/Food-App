@@ -65,23 +65,34 @@ Local development runs a parallel `server/` tRPC on Node that mirrors the worker
 
 ```
 .
-├── app/                  # Expo Router screens
-├── components/           # React Native components
-├── hooks/                # React hooks (local state, tRPC clients, taste profile)
-├── utils/                # Pure helpers (geo, hours, PII guard, photo classifier)
-├── server/               # Local-dev tRPC server (mirrors worker API)
-├── worker/               # Cloudflare Worker production backend
-├── types/                # Shared TypeScript types
-├── constants/            # Theme, OAuth constants
-├── context/, contexts/   # React context providers
-├── lib/                  # Runtime bits (tRPC client, env validator)
-├── scripts/              # Ad-hoc scripts (integration tests, content guard tests)
+├── app/                  # Expo Router screens (9 files)
+│   ├── (tabs)/           # Home, Browse, Favorites, Settings
+│   ├── restaurant/       # [id].tsx detail page
+│   └── oauth/            # OAuth callback handler
+├── components/           # React Native components (18 files)
+├── hooks/                # React hooks (20 files — auth, taste profile, classified photos, semantic search, etc.)
+├── utils/                # Pure helpers (8 files — geo, hours, PII guard, photo classifier, logger)
+├── server/               # Local-dev tRPC server (30 files — scrapers, RAG pipeline, metrics, admin)
+├── worker/               # Cloudflare Worker production backend (11 TS files)
+├── types/                # Shared TypeScript types (restaurant model)
+├── constants/            # Theme, OAuth, app constants (3 files)
+├── context/, contexts/   # React context providers (2 files)
+├── lib/                  # Runtime bits (5 files — tRPC client, auth, API, env validator)
+├── shared/               # Shared types and constants between client/server (3 files)
+├── data/                 # Local restaurant seed data
+├── drizzle/              # Database schema and migrations
+├── scripts/              # Build, test, and utility scripts (12 files)
+├── __tests__/, tests/    # Unit and integration tests (22 files)
+├── monitoring/           # Grafana dashboard + Prometheus alerting rules
 ├── assets/               # Icons, fonts, splash images
 ├── android/              # Native Android project (committed, not managed)
-├── wrangler.toml         # Cloudflare Worker config
-├── app.config.ts         # Expo config
+├── vendor/               # Vendored dependencies
+├── wrangler.toml         # Cloudflare Worker config (D1, KV, R2, Vectorize, Workers AI)
+├── app.config.ts         # Expo config (v1.0.2)
 └── eas.json              # EAS Build profiles
 ```
+
+**Codebase totals:** ~145 source files (TS/TSX/JS), 22 test files, 81 npm packages (54 deps + 27 devDeps).
 
 ## Setup
 
@@ -250,7 +261,7 @@ This is a private repository. If you've been given access and want to contribute
 
 ## License
 
-Proprietary. © 2025 Sassy Consulting LLC. All rights reserved.
+Proprietary. © 2025-2026 Sassy Consulting LLC. All rights reserved.
 
 ## Contact
 
@@ -259,5 +270,7 @@ Proprietary. © 2025 Sassy Consulting LLC. All rights reserved.
 **Privacy Policy:** https://privacy.sassyconsultingllc.com/foodie-finder
 
 ---
+
+Last Updated: 2026-05-15
 
 Built with ♠ by Sassy Consulting LLC — a Veteran-Owned company.
