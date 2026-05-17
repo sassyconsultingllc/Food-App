@@ -7,6 +7,22 @@ used on Google Play.
 The **Privacy Policy** linked from every release: <https://sassyconsultingllc.com/privacy/foodie-finder/>
 The **Terms of Service** linked from every release: <https://sassyconsultingllc.com/privacy/foodie-finder/terms>
 
+## 1.0.2 (vc12) — pending rebuild
+
+- **Photo Picker migration (Play Store compliance):** removed the
+  `READ_MEDIA_IMAGES` permission. Menu-photo uploads and the profile
+  picture now go through the Android Photo Picker (`PickVisualMedia`) on
+  Android 13+ via `expo-image-picker` v17, which requires no runtime
+  permission — the user picks one image at a time and the app never sees
+  the rest of the gallery. This resolves the Play Store policy notice
+  "Invalid use of the photo and video permissions" (apps with one-time
+  or infrequent media access must use the Photo Picker, not
+  `READ_MEDIA_IMAGES`). `READ_EXTERNAL_STORAGE` is retained with
+  `maxSdkVersion="32"` for the legacy gallery path on Android 12 and
+  below. Also added explicit `tools:node="remove"` strips for
+  `READ_MEDIA_IMAGES` and `READ_MEDIA_VIDEO` so transitive dependencies
+  cannot re-introduce them via manifest merger.
+
 ## 1.0.2 (vc8) — pending rebuild
 
 - Settings → About now displays the live app version from `app.config.ts`

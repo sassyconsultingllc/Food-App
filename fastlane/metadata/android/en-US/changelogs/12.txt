@@ -1,0 +1,8 @@
+What's new in 1.0.2:
+• Photo uploads now use the Android Photo Picker — your full photo library
+  no longer needs to be shared with the app. Pick just the menu photo or
+  profile picture you want, nothing more.
+• Removed the broad "Photos and videos" permission. Foodie Finder now
+  asks for nothing on Android 13+ when you upload a menu photo.
+
+Privacy policy: https://sassyconsultingllc.com/privacy/foodie-finder/

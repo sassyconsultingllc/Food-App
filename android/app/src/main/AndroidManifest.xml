@@ -5,15 +5,24 @@
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
   <uses-permission android:name="android.permission.VIBRATE"/>
   <uses-permission android:name="android.permission.CAMERA"/>
-  <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+  <!-- Image picking uses the Android Photo Picker (PickVisualMedia) on
+       Android 13+ via expo-image-picker v17, which requires NO runtime
+       permission. READ_MEDIA_IMAGES was removed per Google Play policy
+       "Invalid use of the photo and video permissions" — apps with
+       one-time / infrequent media access must use the Photo Picker.
+       READ_EXTERNAL_STORAGE is kept (capped at API 32) for the legacy
+       gallery path on Android 12 and below, where the Photo Picker
+       backport is unavailable. -->
   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
   <!-- Permissions that auto-link or merger may try to inject — strip them so
        Play Store doesn't classify the app as needing overlay/mic/storage-write.
        The app has no overlay UI, no audio recording (expo-audio is playback-only),
-       and uses scoped media access (READ_MEDIA_IMAGES) instead of legacy storage. -->
+       and uses scoped media access via the Photo Picker on Android 13+. -->
   <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" tools:node="remove"/>
   <uses-permission android:name="android.permission.RECORD_AUDIO" tools:node="remove"/>
   <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove"/>
+  <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove"/>
+  <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" tools:node="remove"/>
   <queries>
     <intent>
       <action android:name="android.intent.action.VIEW"/>
