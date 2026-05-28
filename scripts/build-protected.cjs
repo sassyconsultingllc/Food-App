@@ -13,7 +13,7 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const JavaScriptObfuscator = require('javascript-obfuscator');
-const obfuscatorConfig = require('../obfuscator.config.js');
+const obfuscatorConfig = require('../obfuscator.config.cjs');
 
 // ============================================================================
 // Configuration
