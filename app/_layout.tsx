@@ -32,6 +32,7 @@ import { initSassyRuntime, subscribeSafeAreaInsets } from "@/lib/sassy-runtime";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { validateEnvironment } from "@/lib/env-validator";
 import { trpc, createTRPCClient } from "@/lib/trpc";
+import { LicenseProvider } from "@/hooks/use-license";
 
 /**
  * Invisible bridge that sits inside the tRPC provider tree and mounts the
@@ -127,16 +128,18 @@ function RootLayoutContent() {
   );
 
   const appContent = (
-    <RestaurantSearchProvider>
-      <ErrorBoundary>
-        <ShareHandlerBridge />
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="modal" options={{ presentation: "modal", title: "Modal" }} />
-          <Stack.Screen name="restaurant/[id]" options={{ headerShown: false }} />
-        </Stack>
-      </ErrorBoundary>
-    </RestaurantSearchProvider>
+    <LicenseProvider>
+      <RestaurantSearchProvider>
+        <ErrorBoundary>
+          <ShareHandlerBridge />
+          <Stack>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="modal" options={{ presentation: "modal", title: "Modal" }} />
+            <Stack.Screen name="restaurant/[id]" options={{ headerShown: false }} />
+          </Stack>
+        </ErrorBoundary>
+      </RestaurantSearchProvider>
+    </LicenseProvider>
   );
 
   const content = (
