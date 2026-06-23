@@ -19,10 +19,21 @@ export async function apiCall<T>(endpoint: string, options: RequestInit = {}): P
   const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
   const url = baseUrl ? `${cleanBaseUrl}${cleanEndpoint}` : endpoint;
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  // Don't let a hung server leave the request pending forever. Use a manual
+  // AbortController + timer (AbortSignal.timeout isn't reliably available on
+  // older Hermes). Respect a caller-supplied signal if one was passed.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers,
+      signal: options.signal ?? controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     const errorText = await response.text();

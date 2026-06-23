@@ -18,6 +18,8 @@ import { initCacheTables, isPostalCodeCached, getCachedRestaurants, cacheRestaur
 import { semanticSearch, findSimilar, indexRestaurants, getIndexStats, recommendFromFavorites } from "./vector-search";
 import { RestaurantEmbeddingInput } from "./embeddings";
 import { guardPublicNote, checkNoteRateLimit } from "./content-guard";
+import { computeBucketId } from "./restaurant-bucket";
+import type { KVNamespace } from "@cloudflare/workers-types";
 
 interface Context {
   env: Env;
@@ -29,6 +31,95 @@ interface PublicNote {
   text: string;
   name?: string;
   ts: number;
+}
+
+function htmlEscapeNote(str: string): string {
+  return str.replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!)
+  );
+}
+
+/**
+ * Moderate, PII-scrub and HTML-escape a submitted note into a storable
+ * PublicNote. Throws TRPCError (BAD_REQUEST) if blocked or empty-after-scrub.
+ * NEVER logs the note content or any restaurant identity.
+ */
+function moderateAndBuildNote(text: string, displayName?: string): PublicNote {
+  const guard = guardPublicNote(text);
+  if (guard.blocked) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: guard.reason });
+  }
+  if (!guard.cleaned.trim() || guard.cleaned.trim().length < 2) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Note is empty after content processing. Please add more text.",
+    });
+  }
+  const safeName = (displayName || "")
+    .replace(/[\x00-\x1F\x7F]/g, "")
+    .replace(/[&<>"']/g, (ch) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]!)
+    )
+    .trim()
+    .slice(0, 30);
+  return { text: htmlEscapeNote(guard.cleaned), name: safeName || undefined, ts: Date.now() };
+}
+
+/**
+ * Append a note to a KV key with single-collision retry (KV has no CAS).
+ * Caps at 200 notes/key with a 180-day TTL. Shared by the legacy
+ * restaurantId-keyed path and the anonymous bucket-keyed path.
+ */
+async function appendNoteWithRetry(
+  kv: KVNamespace,
+  key: string,
+  note: PublicNote
+): Promise<{ ok: boolean; note: PublicNote; deduped: boolean }> {
+  async function appendOnce(): Promise<{ ok: boolean; note: PublicNote; deduped: boolean }> {
+    const raw = await kv.get(key);
+    let existing: PublicNote[] = [];
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) existing = parsed;
+      } catch {
+        existing = [];
+      }
+    }
+    const mostRecent = existing[existing.length - 1];
+    if (
+      mostRecent &&
+      mostRecent.text === note.text &&
+      mostRecent.name === note.name &&
+      note.ts - mostRecent.ts < 60_000
+    ) {
+      return { ok: true, note: mostRecent, deduped: true };
+    }
+    if (existing.length >= 200) existing.shift();
+    existing.push(note);
+    await kv.put(key, JSON.stringify(existing), { expirationTtl: 60 * 60 * 24 * 180 });
+    const verify = await kv.get(key);
+    let landed = false;
+    if (verify) {
+      try {
+        const parsed = JSON.parse(verify);
+        if (Array.isArray(parsed)) {
+          landed = parsed.some(
+            (n: PublicNote) => n.ts === note.ts && n.text === note.text && n.name === note.name
+          );
+        }
+      } catch {
+        landed = false;
+      }
+    }
+    return { ok: landed, note, deduped: false };
+  }
+  let result = await appendOnce();
+  if (!result.ok) {
+    await new Promise((r) => setTimeout(r, 25 + Math.random() * 75));
+    result = await appendOnce();
+  }
+  return result;
 }
 
 const t = initTRPC.context<Context>().create({
@@ -791,7 +882,7 @@ export const appRouter = router({
           });
         }
         const ip = ctx.req?.headers.get("cf-connecting-ip") || "anon";
-        const rl = await checkNoteRateLimit(rateLimitKv, ip, 10);
+        const rl = await checkNoteRateLimit(rateLimitKv, ip, 10, ctx.env.RESTAURANT_BUCKET_PEPPER);
         if (!rl.allowed) {
           const minutes = Math.max(1, Math.ceil((rl.resetAt - Date.now()) / 60000));
           throw new TRPCError({
@@ -809,9 +900,9 @@ export const appRouter = router({
           });
         }
         if (guard.scrubbed.length > 0) {
-          console.log(
-            `[addPublicNote] scrubbed ${guard.scrubbed.join(",")} from note on ${input.restaurantId}`
-          );
+          // NO-IDENTITY-LOGGING: log the scrub categories only — never the
+          // restaurantId/bucket or the note text.
+          console.log(`[addPublicNote] scrubbed ${guard.scrubbed.join(",")} from a note`);
         }
 
         // Reject notes that became empty after PII/profanity scrubbing (e.g.
@@ -928,9 +1019,7 @@ export const appRouter = router({
           await new Promise((r) => setTimeout(r, 25 + Math.random() * 75));
           result = await appendOnce();
           if (!result.ok) {
-            console.warn(
-              `[addPublicNote] note may have been lost to concurrent write on ${input.restaurantId}`
-            );
+            console.warn("[addPublicNote] a note may have been lost to a concurrent write");
           }
         }
 
@@ -940,6 +1029,90 @@ export const appRouter = router({
         // fact, so any c.header() / ctx.res.setHeader() call would be a
         // no-op. The client already reads { success, note, deduped },
         // adding rateLimitRemaining there is the cheapest channel.
+        return {
+          success: true,
+          note: result.note,
+          deduped: result.deduped,
+          rateLimitRemaining: rl.remaining,
+        };
+      }),
+
+    /**
+     * Anonymous community notes keyed by an opaque restaurant BUCKET ID
+     * (HMAC of geohash+name under the Worker pepper). The client sends only the
+     * restaurant identity {name, lat, lng}; the bucket is computed here, stored
+     * in KV, and NEVER returned to the client or logged — so a KV leak reveals
+     * no restaurant identities. See worker/restaurant-bucket.ts.
+     */
+    getCommunityNotes: publicProcedure
+      .input(z.object({
+        name: z.string().min(1).max(200),
+        lat: z.number().min(-90).max(90),
+        lng: z.number().min(-180).max(180),
+      }))
+      .query(async ({ input, ctx }) => {
+        const kv = ctx.env.FOODIE_PUBLIC_NOTES;
+        const pepper = ctx.env.RESTAURANT_BUCKET_PEPPER;
+        if (!kv || !pepper) return { notes: [] };
+        let bucket: string;
+        try {
+          bucket = await computeBucketId(pepper, input.name, input.lat, input.lng);
+        } catch {
+          return { notes: [] };
+        }
+        const raw = await kv.get(`notes:${bucket}`);
+        if (!raw) return { notes: [] };
+        try {
+          const notes = JSON.parse(raw) as PublicNote[];
+          return { notes: notes.slice(-50).reverse() };
+        } catch {
+          return { notes: [] };
+        }
+      }),
+
+    addCommunityNote: publicProcedure
+      .input(z.object({
+        name: z.string().min(1).max(200),
+        lat: z.number().min(-90).max(90),
+        lng: z.number().min(-180).max(180),
+        text: z.string().min(2, "Note too short").max(500, "Note too long"),
+        displayName: z.string().max(30).optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const kv = ctx.env.FOODIE_PUBLIC_NOTES;
+        if (!kv) {
+          throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Public notes storage not configured" });
+        }
+        const pepper = ctx.env.RESTAURANT_BUCKET_PEPPER;
+        if (!pepper) {
+          throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Anonymous bucketing not configured." });
+        }
+        const rateLimitKv = ctx.env.RATE_LIMIT;
+        if (!rateLimitKv) {
+          throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Rate limiter not configured." });
+        }
+
+        // Rate-limit on a SALTED HASH of the IP (raw IP never stored).
+        // NO-IDENTITY-LOGGING: never log input.name/lat/lng or the bucket.
+        const ip = ctx.req?.headers.get("cf-connecting-ip") || "anon";
+        const rl = await checkNoteRateLimit(rateLimitKv, ip, 10, pepper);
+        if (!rl.allowed) {
+          const minutes = Math.max(1, Math.ceil((rl.resetAt - Date.now()) / 60000));
+          throw new TRPCError({
+            code: "TOO_MANY_REQUESTS",
+            message: `You've hit the hourly tip limit. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`,
+          });
+        }
+
+        const note = moderateAndBuildNote(input.text, input.displayName);
+
+        let bucket: string;
+        try {
+          bucket = await computeBucketId(pepper, input.name, input.lat, input.lng);
+        } catch {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Could not identify this restaurant." });
+        }
+        const result = await appendNoteWithRetry(kv, `notes:${bucket}`, note);
         return {
           success: true,
           note: result.note,
@@ -981,15 +1154,22 @@ export const appRouter = router({
         // Rate-limit per IP — this endpoint makes external API calls that
         // cost money (Google Places Details). 10 calls/minute per IP.
         const shareRlKv = ctx.env.RATE_LIMIT;
-        if (shareRlKv) {
-          const ip = ctx.req?.headers.get("cf-connecting-ip") || "anon";
-          const rl = await checkNoteRateLimit(shareRlKv, `share:${ip}`, 10);
-          if (!rl.allowed) {
-            throw new TRPCError({
-              code: "TOO_MANY_REQUESTS",
-              message: "Too many share imports. Please try again in a minute.",
-            });
-          }
+        // FAIL CLOSED, like addPublicNote: this endpoint makes paid Google
+        // Places Details calls, so a missing RATE_LIMIT binding must reject
+        // rather than hand out unlimited un-throttled imports.
+        if (!shareRlKv) {
+          throw new TRPCError({
+            code: "SERVICE_UNAVAILABLE",
+            message: "Rate limiter not configured.",
+          });
+        }
+        const ip = ctx.req?.headers.get("cf-connecting-ip") || "anon";
+        const rl = await checkNoteRateLimit(shareRlKv, `share:${ip}`, 10, ctx.env.RESTAURANT_BUCKET_PEPPER);
+        if (!rl.allowed) {
+          throw new TRPCError({
+            code: "TOO_MANY_REQUESTS",
+            message: "Too many share imports. Please try again in a minute.",
+          });
         }
 
         const db = ctx.env.DB;

@@ -48,7 +48,10 @@ export function isRestaurantOpenNow(hours?: HoursOfOperation): boolean {
     const is24h = noAmPm && (openH > 12 || closeH > 12 || openH === 0 || closeH === 0);
 
     const openTime = parseTime(openH, parseInt(openMin), openAmPm, is24h);
-    let closeTime = parseTime(closeH, parseInt(closeMin), closeAmPm || openAmPm, is24h);
+    // Don't carry the OPEN side's am/pm to the close side — "11am-2" means
+    // 2pm, not 2am. With closeAmPm undefined, parseTime's hour-≤6 heuristic
+    // resolves it correctly.
+    let closeTime = parseTime(closeH, parseInt(closeMin), closeAmPm, is24h);
     
     // Handle overnight hours (e.g., 11am - 2am)
     if (closeTime <= openTime) {

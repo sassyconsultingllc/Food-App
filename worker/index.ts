@@ -21,6 +21,8 @@ async function ensureCacheTablesIfNeeded(db: any) {
 }
 import type { Env } from "./context";
 import type { KVNamespace } from "@cloudflare/workers-types";
+import { hashIdentifier, computeBucketId } from "./restaurant-bucket";
+import { stripImageMetadata } from "./image-metadata";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -31,7 +33,8 @@ async function checkRateLimit(
   kv: KVNamespace | undefined,
   key: string,
   maxRequests: number,
-  windowSeconds: number
+  windowSeconds: number,
+  salt?: string
 ): Promise<{ allowed: boolean; remaining: number }> {
   // FAIL CLOSED when KV is missing. A missing binding means an unknown
   // environment state; we don't want to hand out unlimited requests.
@@ -44,7 +47,12 @@ async function checkRateLimit(
   // burst 2*maxRequests in ~1 second at a window boundary.
   const now = Date.now();
   const windowMs = windowSeconds * 1000;
-  const storageKey = `rl:${key}`;
+  // Salt-hash the key (which embeds the client IP) so the raw IP is never
+  // written to KV. With the short TTL below the hash can't be correlated to a
+  // person after the window. No salt configured -> fall back to the raw key
+  // (rate-limiting still works; it just isn't IP-anonymized).
+  const hashedKey = salt ? await hashIdentifier(salt, key) : key;
+  const storageKey = `rl:${hashedKey}`;
 
   const raw = await kv.get(storageKey);
   let stamps: number[] = [];
@@ -84,7 +92,7 @@ function getClientIP(c: any): string {
 // Rate limit: tRPC — 60 req/min per IP
 app.use("/api/trpc/*", async (c, next) => {
   const ip = getClientIP(c);
-  const { allowed, remaining } = await checkRateLimit(c.env.RATE_LIMIT, `trpc:${ip}`, 60, 60);
+  const { allowed, remaining } = await checkRateLimit(c.env.RATE_LIMIT, `trpc:${ip}`, 60, 60, c.env.RESTAURANT_BUCKET_PEPPER);
   c.header("X-RateLimit-Remaining", String(remaining));
   if (!allowed) return c.json({ error: "Rate limit exceeded. Try again in a minute." }, 429);
   await next();
@@ -93,7 +101,7 @@ app.use("/api/trpc/*", async (c, next) => {
 // Rate limit: uploads — 10 req/min per IP
 app.use("/api/menu/*/upload", async (c, next) => {
   const ip = getClientIP(c);
-  const { allowed, remaining } = await checkRateLimit(c.env.RATE_LIMIT, `upload:${ip}`, 10, 60);
+  const { allowed, remaining } = await checkRateLimit(c.env.RATE_LIMIT, `upload:${ip}`, 10, 60, c.env.RESTAURANT_BUCKET_PEPPER);
   c.header("X-RateLimit-Remaining", String(remaining));
   if (!allowed) return c.json({ error: "Upload rate limit exceeded. Try again in a minute." }, 429);
   await next();
@@ -315,7 +323,7 @@ app.post("/api/vision/classify", async (c) => {
   // Uses the same sliding-window limiter as /api/menu/*/upload (fails closed
   // when the KV binding is missing).
   const ip = getClientIP(c);
-  const rl = await checkRateLimit(env.RATE_LIMIT, `vision:${ip}`, 30, 60);
+  const rl = await checkRateLimit(env.RATE_LIMIT, `vision:${ip}`, 30, 60, env.RESTAURANT_BUCKET_PEPPER);
   c.header("X-RateLimit-Remaining", String(rl.remaining));
   if (!rl.allowed) {
     return c.json({ error: "Vision rate limit exceeded. Try again in a minute." }, 429);
@@ -542,7 +550,7 @@ app.get("/api/photo", async (c) => {
   // Rate-limit per client IP so someone can't hammer this to burn
   // through Google Places photo quota.
   const ip = getClientIP(c);
-  const rl = await checkRateLimit(c.env.RATE_LIMIT, `photo:${ip}`, 120, 60);
+  const rl = await checkRateLimit(c.env.RATE_LIMIT, `photo:${ip}`, 120, 60, c.env.RESTAURANT_BUCKET_PEPPER);
   c.header("X-RateLimit-Remaining", String(rl.remaining));
   if (!rl.allowed) {
     return c.json({ error: "Rate limit exceeded" }, 429);
@@ -620,7 +628,7 @@ app.post("/api/menu/discover", async (c) => {
   // Rate-limit per client IP — discovery does up to ~13 outbound fetches
   // per call so a single IP shouldn't be able to burn through cycles.
   const ip = getClientIP(c);
-  const rl = await checkRateLimit(env.RATE_LIMIT, `discover:${ip}`, 20, 60);
+  const rl = await checkRateLimit(env.RATE_LIMIT, `discover:${ip}`, 20, 60, env.RESTAURANT_BUCKET_PEPPER);
   c.header("X-RateLimit-Remaining", String(rl.remaining));
   if (!rl.allowed) {
     return c.json({ error: "Discovery rate limit exceeded. Try again in a minute." }, 429);
@@ -888,6 +896,249 @@ app.post("/api/menu/:restaurantId/upload", async (c) => {
     return c.json({ ok: true, uploaded });
   } catch (err) {
     return c.json({ error: String(err) }, 500);
+  }
+});
+
+// =============================================================================
+// Anonymous community photos (bucket-keyed, EXIF-stripped, SafeSearch-gated)
+// =============================================================================
+
+/** Base32-free chunked base64 of raw bytes (for Vision image.content). */
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+/**
+ * Moderate an uploaded image with Google Vision: reject explicit content
+ * (SafeSearch) and reject anything that isn't a menu (dense OCR text, same
+ * thresholds as /api/vision/classify). FAILS CLOSED — if Vision isn't
+ * configured or is unreachable, the upload is refused rather than stored
+ * unmoderated.
+ */
+async function moderateImage(
+  env: Env,
+  bytes: Uint8Array
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const visionKey = (env as any).GOOGLE_VISION_API_KEY as string | undefined;
+  if (!visionKey) {
+    return { ok: false, reason: "Image moderation is not configured." };
+  }
+  let res: Response;
+  try {
+    res = await fetch("https://vision.googleapis.com/v1/images:annotate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-goog-api-key": visionKey },
+      body: JSON.stringify({
+        requests: [
+          {
+            image: { content: bytesToBase64(bytes) },
+            features: [
+              { type: "SAFE_SEARCH_DETECTION" },
+              { type: "TEXT_DETECTION", maxResults: 1 },
+            ],
+          },
+        ],
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch {
+    return { ok: false, reason: "Moderation service unreachable. Please try again." };
+  }
+  if (!res.ok) return { ok: false, reason: "Moderation service error. Please try again." };
+  const json = (await res.json()) as { responses?: any[] };
+  const r = json.responses?.[0];
+
+  // SafeSearch — reject explicit/violent imagery.
+  const ss = r?.safeSearchAnnotation || {};
+  const bad = new Set(["LIKELY", "VERY_LIKELY"]);
+  if (bad.has(ss.adult) || bad.has(ss.violence) || bad.has(ss.racy)) {
+    return { ok: false, reason: "This image was flagged as inappropriate and can't be posted." };
+  }
+
+  // Menu classifier — must look like a menu, not a random/storefront photo.
+  const text: string =
+    r?.fullTextAnnotation?.text || r?.textAnnotations?.[0]?.description || "";
+  const charCount = text.replace(/\s+/g, "").length;
+  const wordCount = text.split(/\s+/).filter((w) => w.length > 1).length;
+  const lineCount = text.split(/\r?\n/).filter((l) => l.trim().length > 0).length;
+  const isMenu =
+    (charCount >= VISION_MIN_CHARS && wordCount >= VISION_MIN_WORDS) ||
+    lineCount >= VISION_MIN_LINES;
+  if (!isMenu) {
+    return {
+      ok: false,
+      reason: "This doesn't look like a menu photo. Please upload a clear photo of the menu.",
+    };
+  }
+  return { ok: true };
+}
+
+let communityPhotoTableReady = false;
+async function ensureCommunityPhotoTable(db: any): Promise<void> {
+  if (communityPhotoTableReady) return;
+  // Keyed ONLY by the opaque bucket — no restaurant_id, no uploader, no FK.
+  await db
+    .prepare(
+      "CREATE TABLE IF NOT EXISTS community_photos (id TEXT PRIMARY KEY, bucket_id TEXT NOT NULL, r2_key TEXT NOT NULL, caption TEXT, created_at TEXT DEFAULT (datetime('now')))"
+    )
+    .run();
+  await db
+    .prepare("CREATE INDEX IF NOT EXISTS idx_community_photos_bucket ON community_photos(bucket_id)")
+    .run();
+  communityPhotoTableReady = true;
+}
+
+const COMMUNITY_PHOTO_BASE_URL = "https://foodie-finder-menus.sassyconsultingllc.com/";
+
+// Upload an anonymous community menu photo. Client sends {name,lat,lng,image};
+// the bucket is computed here and is the ONLY key persisted. The image is
+// EXIF-stripped and SafeSearch/menu-gated before storage. Nothing identifying
+// is logged or returned.
+app.post("/api/community/photo", async (c) => {
+  const r2 = c.env.MENU_PHOTOS;
+  const db = c.env.DB;
+  const pepper = c.env.RESTAURANT_BUCKET_PEPPER;
+  if (!r2 || !db) return c.json({ error: "Storage not configured" }, 500);
+  if (!pepper) return c.json({ error: "Anonymous uploads are not configured." }, 503);
+
+  // Rate-limit per IP (salted-hash key; raw IP never stored).
+  const ip = getClientIP(c);
+  const rl = await checkRateLimit(c.env.RATE_LIMIT, `community:${ip}`, 10, 60, pepper);
+  c.header("X-RateLimit-Remaining", String(rl.remaining));
+  if (!rl.allowed) {
+    return c.json({ error: "Upload rate limit exceeded. Try again in a minute." }, 429);
+  }
+
+  await ensureCommunityPhotoTable(db);
+
+  try {
+    const form = await c.req.formData();
+    const name = String(form.get("name") || "");
+    const lat = Number(form.get("lat"));
+    const lng = Number(form.get("lng"));
+    const captionRaw = form.get("caption");
+    const file = form.get("image");
+    if (!name || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return c.json({ error: "Missing restaurant identity" }, 400);
+    }
+    if (!file || typeof file === "string") {
+      return c.json({ error: "No image provided" }, 400);
+    }
+    const blob = file as unknown as { size: number; arrayBuffer(): Promise<ArrayBuffer> };
+    if (blob.size > MAX_FILE_SIZE) {
+      return c.json({ error: `File exceeds ${MAX_FILE_SIZE / 1024 / 1024}MB limit` }, 400);
+    }
+
+    const raw = new Uint8Array(await blob.arrayBuffer());
+
+    // 1. Strip EXIF/metadata. Fail CLOSED — never store an image we can't strip.
+    let stripped;
+    try {
+      stripped = stripImageMetadata(raw);
+    } catch {
+      return c.json({ error: "Unsupported or unreadable image (JPEG or PNG only)." }, 400);
+    }
+
+    // 2. Compute the opaque bucket (server-side only; never logged or returned).
+    let bucketId: string;
+    try {
+      bucketId = await computeBucketId(pepper, name, lat, lng);
+    } catch {
+      return c.json({ error: "Could not identify this restaurant." }, 400);
+    }
+
+    // 3. Per-bucket cap.
+    try {
+      const row = await db
+        .prepare("SELECT COUNT(*) AS n FROM community_photos WHERE bucket_id = ?")
+        .bind(bucketId)
+        .first<{ n: number }>();
+      if (Number(row?.n ?? 0) >= MAX_PHOTOS_PER_RESTAURANT) {
+        return c.json(
+          { error: `This place already has the maximum ${MAX_PHOTOS_PER_RESTAURANT} community photos.` },
+          429
+        );
+      }
+    } catch {
+      /* proceed — other limits bound the blast radius */
+    }
+
+    // 4. SafeSearch + menu-classifier gate (fails closed if Vision is absent).
+    const gate = await moderateImage(c.env, stripped.bytes);
+    if (!gate.ok) return c.json({ error: gate.reason }, 400);
+
+    // 5. Store, keyed only by the bucket.
+    const id = crypto.randomUUID();
+    const ext = stripped.format === "png" ? "png" : "jpg";
+    const contentType = stripped.format === "png" ? "image/png" : "image/jpeg";
+    const r2Key = `community/${bucketId}/${id}.${ext}`;
+    const caption = typeof captionRaw === "string" ? captionRaw.slice(0, 140) : null;
+
+    try {
+      await db
+        .prepare("INSERT INTO community_photos (id, bucket_id, r2_key, caption) VALUES (?, ?, ?, ?)")
+        .bind(id, bucketId, r2Key, caption)
+        .run();
+    } catch {
+      return c.json({ error: "Failed to save photo." }, 500);
+    }
+    try {
+      await r2.put(r2Key, stripped.bytes, { httpMetadata: { contentType } });
+    } catch {
+      try {
+        await db.prepare("DELETE FROM community_photos WHERE id = ?").bind(id).run();
+      } catch {
+        /* best effort */
+      }
+      return c.json({ error: "Failed to store image." }, 500);
+    }
+    // NO-IDENTITY-LOGGING: never log name/lat/lng or bucketId.
+    return c.json({ ok: true });
+  } catch {
+    return c.json({ error: "Upload failed." }, 500);
+  }
+});
+
+// List anonymous community photos for a restaurant identity. Client sends
+// {name,lat,lng} as query params; the bucket is computed here and never
+// returned. Only opaque image URLs come back.
+app.get("/api/community/photos", async (c) => {
+  const db = c.env.DB;
+  const pepper = c.env.RESTAURANT_BUCKET_PEPPER;
+  if (!db || !pepper) return c.json({ photos: [] });
+  const name = c.req.query("name") || "";
+  const lat = Number(c.req.query("lat"));
+  const lng = Number(c.req.query("lng"));
+  if (!name || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return c.json({ photos: [] });
+  }
+  await ensureCommunityPhotoTable(db);
+  let bucketId: string;
+  try {
+    bucketId = await computeBucketId(pepper, name, lat, lng);
+  } catch {
+    return c.json({ photos: [] });
+  }
+  try {
+    const rows = await db
+      .prepare(
+        "SELECT r2_key, caption, created_at FROM community_photos WHERE bucket_id = ? ORDER BY created_at DESC LIMIT 50"
+      )
+      .bind(bucketId)
+      .all<{ r2_key: string; caption: string | null; created_at: string }>();
+    const photos = (rows.results || []).map((r) => ({
+      url: COMMUNITY_PHOTO_BASE_URL + r.r2_key,
+      caption: r.caption,
+      createdAt: r.created_at,
+    }));
+    return c.json({ photos });
+  } catch {
+    return c.json({ photos: [] });
   }
 });
 

@@ -56,8 +56,11 @@ export function usePreferences() {
   }, []);
 
   const savePreferences = useCallback(async (newPrefs: Partial<UserPreferences>) => {
-    try {
-      const updated = { ...preferences, ...newPrefs };
+    // Merge against the latest state inside the updater so two rapid saves
+    // (e.g. radius then location) don't clobber each other through a stale
+    // `preferences` closure. Persist the freshly-merged value from in here too.
+    setPreferencesState((prev) => {
+      const updated = { ...prev, ...newPrefs };
       // Keep zipCode in sync with postalCode
       if (newPrefs.defaultPostalCode !== undefined) {
         updated.defaultZipCode = newPrefs.defaultPostalCode;
@@ -65,13 +68,12 @@ export function usePreferences() {
       if (newPrefs.defaultZipCode !== undefined) {
         updated.defaultPostalCode = newPrefs.defaultZipCode;
       }
-      
-      setPreferencesState(updated);
-      await AsyncStorage.setItem(PREFERENCES_KEY, JSON.stringify(updated));
-    } catch (error) {
-      console.error('[Preferences] Failed to save:', error);
-    }
-  }, [preferences]);
+      AsyncStorage.setItem(PREFERENCES_KEY, JSON.stringify(updated)).catch((error) =>
+        console.error('[Preferences] Failed to save:', error),
+      );
+      return updated;
+    });
+  }, []);
 
   const resetPreferences = useCallback(async () => {
     try {

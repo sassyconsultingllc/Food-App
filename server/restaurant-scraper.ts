@@ -102,41 +102,10 @@ interface GeoCoords {
   state?: string;
 }
 
-// In-memory cache for geocoded locations
-const GEOCODE_CACHE: Record<string, GeoCoords> = {
-  // Major European cities
-  "SW1A 0AA": { lat: 51.5074, lng: -0.1278, country: "United Kingdom", countryCode: "GB", city: "London" },
-  "EC1A 1BB": { lat: 51.5180, lng: -0.0830, country: "United Kingdom", countryCode: "GB", city: "London" },
-  "10115": { lat: 52.5200, lng: 13.4050, country: "Germany", countryCode: "DE", city: "Berlin" },
-  "10117": { lat: 52.5163, lng: 13.3777, country: "Germany", countryCode: "DE", city: "Berlin" },
-  "75001": { lat: 48.8566, lng: 2.3522, country: "France", countryCode: "FR", city: "Paris" },
-  "75002": { lat: 48.8698, lng: 2.3423, country: "France", countryCode: "FR", city: "Paris" },
-  "28001": { lat: 40.4168, lng: -3.7038, country: "Spain", countryCode: "ES", city: "Madrid" },
-  "28013": { lat: 40.4203, lng: -3.7057, country: "Spain", countryCode: "ES", city: "Madrid" },
-  "00185": { lat: 41.9028, lng: 12.4964, country: "Italy", countryCode: "IT", city: "Rome" },
-  "20121": { lat: 45.4642, lng: 9.1900, country: "Italy", countryCode: "IT", city: "Milan" },
-  "1012": { lat: 52.3676, lng: 4.9041, country: "Netherlands", countryCode: "NL", city: "Amsterdam" },
-  "1050": { lat: 52.3702, lng: 4.8952, country: "Netherlands", countryCode: "NL", city: "Amsterdam" },
-  "8001": { lat: 47.3769, lng: 8.5417, country: "Switzerland", countryCode: "CH", city: "Zurich" },
-  "1000": { lat: 46.2044, lng: 6.1432, country: "Switzerland", countryCode: "CH", city: "Geneva" },
-  "1010": { lat: 48.2082, lng: 16.3738, country: "Austria", countryCode: "AT", city: "Vienna" },
-  "1060": { lat: 48.1954, lng: 16.3635, country: "Austria", countryCode: "AT", city: "Vienna" },
-  "1011": { lat: 60.1699, lng: 24.9384, country: "Finland", countryCode: "FI", city: "Helsinki" },
-  "00100": { lat: 60.1695, lng: 24.9354, country: "Finland", countryCode: "FI", city: "Helsinki" },
-  "1143": { lat: 59.9139, lng: 10.7522, country: "Norway", countryCode: "NO", city: "Oslo" },
-  "0150": { lat: 59.9127, lng: 10.7461, country: "Norway", countryCode: "NO", city: "Oslo" },
-  "11120": { lat: 59.3293, lng: 18.0686, country: "Sweden", countryCode: "SE", city: "Stockholm" },
-  "10328": { lat: 59.3326, lng: 18.0648, country: "Sweden", countryCode: "SE", city: "Stockholm" },
-  "1620": { lat: 55.6761, lng: 12.5683, country: "Denmark", countryCode: "DK", city: "Copenhagen" },
-  "1700": { lat: 55.6867, lng: 12.5703, country: "Denmark", countryCode: "DK", city: "Copenhagen" },
-  "D-10115": { lat: 52.5200, lng: 13.4050, country: "Germany", countryCode: "DE", city: "Berlin" }, // German format
-  
-  // Keep existing US codes for compatibility
-  "53703": { lat: 43.0731, lng: -89.4012, country: "United States", countryCode: "US", city: "Madison", state: "WI" },
-  "60601": { lat: 41.8819, lng: -87.6278, country: "United States", countryCode: "US", city: "Chicago", state: "IL" },
-  "10001": { lat: 40.7484, lng: -73.9857, country: "United States", countryCode: "US", city: "New York", state: "NY" },
-  "90210": { lat: 34.0901, lng: -118.4065, country: "United States", countryCode: "US", city: "Beverly Hills", state: "CA" },
-};
+// In-memory cache for geocoded locations. Seeded EMPTY on purpose — there is
+// no hardcoded coordinate data; every postal code is resolved live via
+// Nominatim and then cached here for the process lifetime.
+const GEOCODE_CACHE: Record<string, GeoCoords> = {};
 
 /**
  * Geocode a postal code to coordinates - INTERNATIONAL
@@ -398,8 +367,12 @@ async function fetchFromOpenStreetMap(
 ): Promise<Partial<ScrapedRestaurant>[]> {
   try {
     // Overpass QL query for restaurants
-    const cuisineFilter = cuisineType 
-      ? `["cuisine"~"${cuisineType}",i]` 
+    // Sanitize before interpolating into Overpass QL (see worker/scraper.ts):
+    // keep only letters/digits/space/_/- so a crafted cuisineType can't break
+    // out of the regex literal and inject extra query clauses.
+    const safeCuisine = cuisineType?.replace(/[^a-zA-Z0-9 _-]/g, '').trim();
+    const cuisineFilter = safeCuisine
+      ? `["cuisine"~"${safeCuisine}",i]`
       : '';
     
     const query = `
@@ -481,6 +454,82 @@ function formatCuisine(cuisine?: string): string {
 function formatGoogleType(t?: string): string | undefined {
   if (!t) return undefined;
   return t.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// Mirrors worker/scraper.ts. Unambiguous non-food category tokens — a real
+// restaurant never carries these, so any record with one is contamination
+// from a fuzzy provider match and gets dropped before reaching the reel.
+const NON_FOOD_CATEGORY_TOKENS = [
+  'hardware', 'house & garden', 'home & garden', 'home improvement',
+  'furniture', 'clothing', 'apparel', 'shoe', 'jewelry', 'department store',
+  'grocery', 'supermarket', 'convenience store', 'liquor store', 'pharmacy',
+  'drugstore', 'gas station', 'petrol', 'fuel', 'automotive', 'car repair',
+  'car dealer', 'hotel', 'motel', 'lodging', 'hospital', 'clinic', 'dentist',
+  'bank', 'atm', 'hair salon', 'beauty salon', 'nail salon', 'barber', 'spa',
+  'gym', 'fitness', 'school', 'university', 'church', 'government', 'library',
+  'gallery', 'museum', 'storage', 'real estate',
+];
+
+function isNonFoodPlace(categories: string[] = [], cuisineType?: string): boolean {
+  const haystack = [...categories, cuisineType || ''].map((c) => c.toLowerCase());
+  return haystack.some((c) => NON_FOOD_CATEGORY_TOKENS.some((tok) => c.includes(tok)));
+}
+
+// Mirrors worker/scraper.ts. Provider categories are unreliable for the
+// user-facing cuisine label (Foursquare buckets sushi as "Fast Food", a diner
+// as "Bakery"). Prefer a specific cuisine in the categories; else infer from
+// the restaurant name; else fall back to the first non-generic category.
+const CUISINE_KEYWORDS: Array<[RegExp, string]> = [
+  [/sushi|japanese|ramen|izakaya|teriyaki|hibachi/i, 'Japanese'],
+  [/pizz|pizzeria/i, 'Pizza'],
+  [/taqueri|taco|mexican|burrito|cantina|tequil/i, 'Mexican'],
+  [/\bthai\b/i, 'Thai'],
+  [/chinese|szechuan|sichuan|dim sum|\bwok\b|mandarin/i, 'Chinese'],
+  [/indian|curry|tandoor|masala|biryani/i, 'Indian'],
+  [/jamaican|caribbean|jerk\b/i, 'Caribbean'],
+  [/vietnam|\bpho\b|banh mi/i, 'Vietnamese'],
+  [/korean|bulgogi|bibimbap/i, 'Korean'],
+  [/mediterran|greek|gyro|falafel|kebab|shawarma|hummus/i, 'Mediterranean'],
+  [/italian|trattoria|ristorante|\bpasta\b/i, 'Italian'],
+  [/french|brasserie|creperie|crêperie/i, 'French'],
+  [/steakhouse|chophouse|\bsteak\b/i, 'Steakhouse'],
+  [/seafood|oyster|\bcrab\b|lobster|fish fry|fish & chips/i, 'Seafood'],
+  [/\bbbq\b|barbecue|barbeque|smokehouse/i, 'Barbecue'],
+  [/burger/i, 'Burgers'],
+  [/diner|blue plate/i, 'Diner'],
+  [/bakery|bakeri|patisserie|pâtisserie|\bpastr/i, 'Bakery'],
+  [/delicatessen|\bdeli\b|sandwich/i, 'Deli'],
+  [/coffee|\bcafe\b|café|espresso|\bjava|roaster/i, 'Cafe'],
+  [/brewery|brewpub|brewing|taproom|alehouse|freehouse|\bpub\b/i, 'Brewpub'],
+  [/vegan|vegetarian|plant.based/i, 'Vegetarian'],
+  [/\basian\b/i, 'Asian'],
+];
+
+const GENERIC_CUISINE_CATEGORIES = new Set([
+  'restaurant', 'restaurants', 'food', 'fast food', 'fast food restaurant',
+  'meal takeaway', 'meal delivery', 'bar', 'point of interest', 'establishment',
+  'casual dining', 'fine dining', 'dining', 'eatery', 'food & drink',
+  // Google's generic `store`/`food` types bleed through as a "cuisine" for
+  // chains like Culver's ("Store"). Treat them as non-cuisines so inferCuisine
+  // falls through to a real label instead of surfacing "Store" to the user.
+  'store', 'food court', 'general',
+]);
+
+function inferCuisine(name: string, categories: string[] = [], fallback?: string): string {
+  for (const cat of categories) {
+    const c = (cat || '').toLowerCase();
+    if (GENERIC_CUISINE_CATEGORIES.has(c)) continue;
+    for (const [re, label] of CUISINE_KEYWORDS) {
+      if (re.test(c)) return label;
+    }
+  }
+  for (const [re, label] of CUISINE_KEYWORDS) {
+    if (re.test(name)) return label;
+  }
+  const specific = categories.find((c) => c && !GENERIC_CUISINE_CATEGORIES.has(c.toLowerCase()));
+  if (specific) return specific;
+  if (fallback && !GENERIC_CUISINE_CATEGORIES.has(fallback.toLowerCase())) return fallback;
+  return 'Restaurant';
 }
 
 function parseOSMHours(hoursString?: string): Record<string, string> | undefined {
@@ -695,9 +744,13 @@ async function fetchCulversLocations(
 
     return data.data.geofences.map((location: any) => {
       const meta = location.metadata || {};
+      // `description` is a store-locator label ("McFarland, WI - Farwell St"),
+      // not the brand. Use the brand (city-suffixed for disambiguation) so the
+      // reel shows "Culver's", not a location string. See worker/scraper.ts.
+      const brandName = meta.city ? `Culver's - ${meta.city}` : "Culver's";
       return {
         id: `culvers_${location._id}`,
-        name: location.description || "Culver's",
+        name: brandName,
         address: meta.street || '',
         city: meta.city || '',
         state: meta.state || '',
@@ -939,7 +992,7 @@ function mergeRestaurantRecords(
     website: records.find(r => r.website)?.website,
     ratings,
     priceRange: records.find(r => r.priceRange)?.priceRange,
-    cuisineType: primary.cuisineType || 'Restaurant',
+    cuisineType: inferCuisine(mergedName, allCategories, primary.cuisineType),
     categories: allCategories,
     hours: records.find(r => r.hours)?.hours,
     photos: allPhotos.slice(0, 20),
@@ -1055,7 +1108,14 @@ export async function scrapeRestaurantsByLocation(
   }
 
   // Deduplicate and merge records from different sources
-  const merged = deduplicateAndMerge(allRestaurants);
+  let merged = deduplicateAndMerge(allRestaurants);
+  // Drop non-food contamination (hardware stores, salons, etc.) a fuzzy
+  // provider search may have injected. Mirrors worker/scraper.ts.
+  const beforeFilter = merged.length;
+  merged = merged.filter((r) => !isNonFoodPlace(r.categories, r.cuisineType));
+  if (merged.length !== beforeFilter) {
+    console.log(`[Scraper] Dropped ${beforeFilter - merged.length} non-food records`);
+  }
   console.log(`[Scraper] Merged ${allRestaurants.length} records into ${merged.length} unique restaurants`);
 
   // Sort by rating (highest first), then by review count

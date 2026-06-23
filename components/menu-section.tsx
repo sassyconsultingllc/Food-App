@@ -37,6 +37,8 @@ const MENU_PHOTO_HEIGHT = MENU_PHOTO_WIDTH * 1.3; // Menu aspect ratio (taller)
 interface MenuSectionProps {
   restaurantId: string;
   restaurantName: string;
+  latitude: number;
+  longitude: number;
   /**
    * Restaurant homepage URL (the scraper currently sets restaurant.menu.url
    * to this — it is NOT a menu URL yet). The component runs discovery
@@ -62,11 +64,19 @@ interface MenuSectionProps {
 export function MenuSection({
   restaurantId,
   restaurantName,
+  latitude,
+  longitude,
   website,
   menuUrl,
   menuPhotos: externalMenuPhotos,
   classifying = false,
 }: MenuSectionProps) {
+  // User photos are stored anonymously, keyed by the restaurant's server-side
+  // bucket (from name + coords). Without coords we can't form the identity.
+  const hasCoords =
+    Number.isFinite(latitude) &&
+    Number.isFinite(longitude) &&
+    (latitude !== 0 || longitude !== 0);
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
   const insets = useSafeAreaInsets();
@@ -108,6 +118,29 @@ export function MenuSection({
     fetchMenuPhotos();
     return () => { cancelled = true; };
   }, [restaurantId]);
+
+  // Fetch anonymous community photos (bucket-keyed) and merge them in.
+  useEffect(() => {
+    if (!hasCoords) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const baseUrl = getApiBaseUrl();
+        const qs = `name=${encodeURIComponent(restaurantName)}&lat=${latitude}&lng=${longitude}`;
+        const res = await fetch(`${baseUrl}/api/community/photos?${qs}`);
+        if (!res.ok) return;
+        const data = (await res.json()) as { photos?: { url: string }[] };
+        if (!cancelled && data.photos?.length) {
+          setApiMenuPhotos((prev) =>
+            Array.from(new Set<string>([...prev, ...data.photos!.map((p) => p.url)]))
+          );
+        }
+      } catch {
+        /* supplementary — don't block on failure */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [restaurantName, latitude, longitude, hasCoords]);
 
   // Kick off discovery against the restaurant website. Persists scraped
   // images into menu_photos server-side, and returns the resolved menu
@@ -219,60 +252,68 @@ export function MenuSection({
   const uploadAssetsToServer = useCallback(
     async (assets: { uri: string; mimeType?: string | null; fileName?: string | null }[]) => {
       if (!assets.length) return [] as string[];
+      if (!hasCoords) {
+        throw new Error("Photos can't be added for this place yet.");
+      }
 
       const baseUrl = getApiBaseUrl();
-      const formData = new FormData();
+      const uploaded: string[] = [];
 
-      assets.forEach((asset, index) => {
+      // Anonymous community upload: one image per request to POST
+      // /api/community/photo. The worker strips EXIF, computes the opaque
+      // bucket from {name,lat,lng}, runs SafeSearch + a menu-classifier gate,
+      // and stores it under the bucket. No restaurant identity is persisted.
+      for (const asset of assets) {
         const mimeType = asset.mimeType || "image/jpeg";
-        const extFromMime: Record<string, string> = {
-          "image/jpeg": "jpg",
-          "image/png": "png",
-          "image/webp": "webp",
-          "image/heic": "heic",
-        };
+        const extFromMime: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png" };
         const ext = extFromMime[mimeType] || "jpg";
-        const name = asset.fileName || `menu_${Date.now()}_${index}.${ext}`;
+
+        const form = new FormData();
+        form.append("name", restaurantName);
+        form.append("lat", String(latitude));
+        form.append("lng", String(longitude));
         // React Native's FormData takes { uri, name, type } objects
-        formData.append("photo", {
+        form.append("image", {
           uri: asset.uri,
-          name,
+          name: asset.fileName || `menu_${Date.now()}.${ext}`,
           type: mimeType,
         } as unknown as Blob);
-      });
 
-      const res = await fetch(`${baseUrl}/api/menu/${restaurantId}/upload`, {
-        method: "POST",
-        body: formData,
-      });
+        const res = await fetch(`${baseUrl}/api/community/photo`, {
+          method: "POST",
+          body: form,
+        });
 
-      if (!res.ok) {
-        // Don't bleed server HTML / stack traces / CF error pages into
-        // the user-facing Alert. Map by status class instead.
-        let friendly: string;
-        if (res.status === 429) {
-          friendly = "You're uploading too fast. Please wait a moment and try again.";
-        } else if (res.status === 413) {
-          friendly = "That photo is too large to upload.";
-        } else if (res.status === 415) {
-          friendly = "That file format isn't supported. Please use a JPEG or PNG.";
-        } else if (res.status >= 500) {
-          friendly = "Menu uploads are temporarily unavailable. Please try again later.";
-        } else {
-          friendly = "Couldn't upload the photo. Please try again.";
+        if (!res.ok) {
+          // Map by status; for 400 (gate rejections: not-a-menu / flagged /
+          // unsupported) surface the server's user-safe reason.
+          let friendly: string;
+          if (res.status === 429) {
+            friendly = "You're uploading too fast. Please wait a moment and try again.";
+          } else if (res.status === 413) {
+            friendly = "That photo is too large to upload.";
+          } else if (res.status >= 500) {
+            friendly = "Menu uploads are temporarily unavailable. Please try again later.";
+          } else {
+            try {
+              const d = (await res.json()) as { error?: string };
+              friendly = d.error || "Couldn't upload the photo. Please try again.";
+            } catch {
+              friendly = "Couldn't upload the photo. Please try again.";
+            }
+          }
+          console.warn("[community-upload] failed", res.status);
+          throw new Error(friendly);
         }
-        // Surface status for logs only — never the raw body.
-        console.warn("[menu-upload] failed", res.status);
-        throw new Error(friendly);
+
+        // The endpoint returns no identity-linkable URL; show the local image
+        // immediately — the next community fetch replaces it with the stored one.
+        uploaded.push(asset.uri);
       }
 
-      const data = await res.json() as { ok?: boolean; uploaded?: string[]; error?: string };
-      if (!data.ok || !data.uploaded?.length) {
-        throw new Error(data.error || "Upload failed");
-      }
-      return data.uploaded;
+      return uploaded;
     },
-    [restaurantId]
+    [restaurantName, latitude, longitude, hasCoords]
   );
 
   const handleUploadPhoto = useCallback(async () => {

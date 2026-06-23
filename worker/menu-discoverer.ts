@@ -205,7 +205,7 @@ async function safeFetch(
       merged.set(chunk, offset);
       offset += chunk.length;
     }
-    const text = new TextDecoder("utf-8", { fatal: false }).decode(merged);
+    const text = new TextDecoder("utf-8", { fatal: false, ignoreBOM: false }).decode(merged);
     return { url: finalUrl, contentType: ct, text, isPdf: false };
   } catch {
     return null;

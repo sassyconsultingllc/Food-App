@@ -35,8 +35,9 @@ interface PublicNote {
 }
 
 interface PublicNotesSectionProps {
-  restaurantId: string;
   restaurantName: string;
+  latitude: number;
+  longitude: number;
   /**
    * Ref to the parent ScrollView. When provided, the note input scrolls
    * itself into view on focus so the OS keyboard doesn't cover it.
@@ -58,12 +59,21 @@ function timeAgo(ts: number): string {
 }
 
 export function PublicNotesSection({
-  restaurantId,
   restaurantName,
+  latitude,
+  longitude,
   parentScrollRef,
 }: PublicNotesSectionProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
+
+  // Community content is keyed by the restaurant's anonymous bucket (computed
+  // server-side from name + coordinates). Without coordinates we can't form the
+  // identity, so the section reads empty and posting is disabled.
+  const hasCoords =
+    Number.isFinite(latitude) &&
+    Number.isFinite(longitude) &&
+    (latitude !== 0 || longitude !== 0);
 
   const [newNote, setNewNote] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -89,11 +99,11 @@ export function PublicNotesSection({
     }, 80);
   };
 
-  const notesQuery = trpc.restaurant.getPublicNotes.useQuery(
-    { restaurantId },
-    { staleTime: 30_000 }
+  const notesQuery = trpc.restaurant.getCommunityNotes.useQuery(
+    { name: restaurantName, lat: latitude, lng: longitude },
+    { staleTime: 30_000, enabled: hasCoords }
   );
-  const addNoteMutation = trpc.restaurant.addPublicNote.useMutation({
+  const addNoteMutation = trpc.restaurant.addCommunityNote.useMutation({
     onSuccess: () => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setNewNote("");
@@ -148,8 +158,14 @@ export function PublicNotesSection({
       if (!proceed) return;
     }
 
+    if (!hasCoords) {
+      Alert.alert("Unavailable", "Community tips aren't available for this place yet.");
+      return;
+    }
     addNoteMutation.mutate({
-      restaurantId,
+      name: restaurantName,
+      lat: latitude,
+      lng: longitude,
       text,
       displayName: displayName.trim() || undefined,
     });

@@ -6,7 +6,7 @@
  * When a user shares a restaurant from Google Maps → we import it to their favorites.
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import React from "react";
 import * as Linking from "expo-linking";
 import { Alert, Platform } from "react-native";
@@ -95,18 +95,22 @@ export function useShareHandler(): ShareHandlerResult {
     id: string;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // In-flight guard as a ref so a second share arriving before the next render
+  // still sees it (state lags a render behind and let duplicate imports through).
+  const isProcessingRef = useRef(false);
 
   const importMutation = trpc.restaurant.importFromShare.useMutation();
 
   const processSharedUrl = useCallback(async (url: string) => {
     // Skip if already processing
-    if (isProcessing) return;
+    if (isProcessingRef.current) return;
 
     // Check if it's a Google Maps URL — quietly drop non-matching URLs
     if (!isGoogleMapsUrl(url)) {
       return;
     }
 
+    isProcessingRef.current = true;
     setIsProcessing(true);
     setError(null);
 
@@ -151,9 +155,10 @@ export function useShareHandler(): ShareHandlerResult {
         [{ text: "OK" }]
       );
     } finally {
+      isProcessingRef.current = false;
       setIsProcessing(false);
     }
-  }, [isProcessing, importMutation]);
+  }, [importMutation]);
 
   const handleUrl = useCallback((event: { url: string }) => {
     const { url } = event;

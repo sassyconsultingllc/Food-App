@@ -78,6 +78,8 @@ async function resolveShortUrl(shortUrl: string): Promise<string | null> {
     const response = await fetch(shortUrl, {
       method: 'HEAD',
       redirect: 'follow',
+      // Don't let a slow/hanging short-link redirect block the whole import.
+      signal: AbortSignal.timeout(5000),
     });
     
     const finalUrl = response.url;

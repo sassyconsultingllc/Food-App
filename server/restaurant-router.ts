@@ -219,6 +219,9 @@ export const restaurantRouter = router({
         postalCode,
         countryCode: effectiveCountry,
         radius,
+        // Pass the unit through — the scraper defaults to miles, so without
+        // this a `km` search was scraped as miles (~60% too wide).
+        radiusUnit,
         cuisineType,
         // Over-fetch only when cuisineType filtering is requested so the
         // post-filter slice still returns roughly `limit` items. With no
@@ -440,6 +443,58 @@ export const restaurantRouter = router({
       existing.push(note);
       localPublicNotes.set(input.restaurantId, existing);
 
+      return { success: true, note, deduped: false };
+    }),
+
+  // Anonymous, bucket-keyed community notes (mirrors the worker's
+  // getCommunityNotes/addCommunityNote so the client types match). The worker
+  // keys on an HMAC bucket; this dev router uses a simple in-memory key derived
+  // from name+coords — dev and prod have separate storage, so they need not
+  // match. NEVER logs name/lat/lng.
+  getCommunityNotes: publicProcedure
+    .input(z.object({
+      name: z.string().min(1).max(200),
+      lat: z.number().min(-90).max(90),
+      lng: z.number().min(-180).max(180),
+    }))
+    .query(async ({ input }) => {
+      const bucket = `${input.name.trim().toLowerCase()}|${input.lat.toFixed(3)}|${input.lng.toFixed(3)}`;
+      const notes = localPublicNotes.get(bucket) || [];
+      return { notes: notes.slice(-50).reverse() };
+    }),
+
+  addCommunityNote: publicProcedure
+    .input(z.object({
+      name: z.string().min(1).max(200),
+      lat: z.number().min(-90).max(90),
+      lng: z.number().min(-180).max(180),
+      text: z.string().min(2).max(500),
+      displayName: z.string().max(30).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const guard = guardPublicNoteLocal(input.text);
+      if (guard.blocked) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: guard.reason });
+      }
+      const safeName = (input.displayName || "")
+        .replace(/[\x00-\x1F\x7F]/g, "")
+        .trim()
+        .slice(0, 30);
+      const note: PublicNote = { text: guard.cleaned, name: safeName || undefined, ts: Date.now() };
+      const bucket = `${input.name.trim().toLowerCase()}|${input.lat.toFixed(3)}|${input.lng.toFixed(3)}`;
+      const existing = localPublicNotes.get(bucket) || [];
+      const mostRecent = existing[existing.length - 1];
+      if (
+        mostRecent &&
+        mostRecent.text === note.text &&
+        mostRecent.name === note.name &&
+        note.ts - mostRecent.ts < 60_000
+      ) {
+        return { success: true, note: mostRecent, deduped: true };
+      }
+      if (existing.length >= 200) existing.shift();
+      existing.push(note);
+      localPublicNotes.set(bucket, existing);
       return { success: true, note, deduped: false };
     }),
 

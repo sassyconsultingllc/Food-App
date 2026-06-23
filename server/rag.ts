@@ -12,7 +12,9 @@ import { invokeLLM } from './_core/llm';
 
 // Initialize ChromaDB client
 export const chromaClient = new ChromaClient({
-  path: 'http://localhost:8000', // Assuming ChromaDB runs locally; adjust if needed
+  // Honor CHROMA_SERVER_URL (via ENV) so a non-localhost deployment connects
+  // to the configured ChromaDB instead of silently hitting localhost.
+  path: ENV.chromaServerUrl,
 });
 
 // Collection name for restaurant reviews

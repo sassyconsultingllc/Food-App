@@ -125,12 +125,14 @@ function FavoriteItem({
             </View>
           )}
 
-          <View style={styles.detailRow}>
-            <IconSymbol name="star.fill" size={16} color={AppColors.copper} />
-            <ThemedText style={[styles.detailText, { color: colors.textSecondary }]}>
-              {restaurant.ratings.aggregated.toFixed(1)} rating
-            </ThemedText>
-          </View>
+          {restaurant.ratings?.aggregated != null && (
+            <View style={styles.detailRow}>
+              <IconSymbol name="star.fill" size={16} color={AppColors.copper} />
+              <ThemedText style={[styles.detailText, { color: colors.textSecondary }]}>
+                {restaurant.ratings.aggregated.toFixed(1)} rating
+              </ThemedText>
+            </View>
+          )}
 
           {openStatus && (
             <View style={styles.detailRow}>

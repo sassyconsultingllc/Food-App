@@ -53,9 +53,22 @@ export function PhotoCarousel({ photos, restaurantName }: PhotoCarouselProps) {
     []
   );
 
-  const viewabilityConfig = {
+  // Stable identity required: FlatList errors (and silently stops updating) if
+  // onViewableItemsChanged / viewabilityConfig change between renders. The
+  // inline object + inline fullscreen callback meant the fullscreen pager
+  // counter never advanced on swipe.
+  const viewabilityConfig = useRef({
     itemVisiblePercentThreshold: 50,
-  };
+  }).current;
+
+  const onFullscreenViewableItemsChanged = useCallback(
+    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      if (viewableItems.length > 0 && viewableItems[0].index !== null) {
+        setFullscreenIndex(viewableItems[0].index);
+      }
+    },
+    []
+  );
 
   const openFullscreen = (index: number) => {
     setFullscreenIndex(index);
@@ -198,11 +211,7 @@ export function PhotoCarousel({ photos, restaurantName }: PhotoCarouselProps) {
               offset: SCREEN_WIDTH * index,
               index,
             })}
-            onViewableItemsChanged={({ viewableItems }) => {
-              if (viewableItems.length > 0 && viewableItems[0].index !== null) {
-                setFullscreenIndex(viewableItems[0].index);
-              }
-            }}
+            onViewableItemsChanged={onFullscreenViewableItemsChanged}
             viewabilityConfig={viewabilityConfig}
           />
 

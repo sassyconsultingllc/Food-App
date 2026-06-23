@@ -50,20 +50,22 @@ export function useSpinHistory() {
   
   // Add a spin to history. Uses functional setState so two rapid spins
   // don't clobber each other via a stale `history` closure.
-  const addToHistory = useCallback(async (restaurantId: string, restaurantName: string) => {
+  const addToHistory = useCallback((restaurantId: string, restaurantName: string) => {
     const entry: SpinHistoryEntry = {
       restaurantId,
       restaurantName,
       pickedAt: new Date().toISOString(),
     };
 
-    let persisted: SpinHistoryEntry[] = [];
+    // Persist inside the updater so we always write the freshly-computed
+    // `next`. The old code captured `next` into an outer var and saved it
+    // after setHistory returned, but React doesn't guarantee the updater runs
+    // synchronously, so rapid spins could persist an empty [] and wipe history.
     setHistory((prev) => {
       const next = [entry, ...prev].slice(0, MAX_HISTORY);
-      persisted = next;
+      void saveHistory(next);
       return next;
     });
-    await saveHistory(persisted);
   }, [saveHistory]);
   
   // Get IDs of restaurants picked within the last N days

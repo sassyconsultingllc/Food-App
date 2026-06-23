@@ -33,6 +33,12 @@ export interface Env {
   GOOGLE_PLACES_API_KEY?: string;
   FOURSQUARE_API_KEY?: string;
   HERE_API_KEY?: string;
+
+  // Anonymous community content: HMAC pepper for restaurant bucket IDs AND for
+  // salting rate-limit IP keys (so the raw IP is never stored/logged). Set via:
+  //   wrangler secret put RESTAURANT_BUCKET_PEPPER
+  // NEVER commit it or ship it to the client. See worker/restaurant-bucket.ts.
+  RESTAURANT_BUCKET_PEPPER?: string;
   
   // App config
   NODE_ENV?: string;

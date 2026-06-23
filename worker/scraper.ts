@@ -277,49 +277,75 @@ async function fetchFoursquare(
   limit: number
 ): Promise<Partial<ScrapedRestaurant>[]> {
   if (!apiKey) return [];
-  
-  try {
-    const url = new URL('https://api.foursquare.com/v3/places/search');
-    url.searchParams.set('ll', `${coords.lat},${coords.lng}`);
-    url.searchParams.set('radius', String(Math.min(radiusMeters, 50000))); // Max 50km
-    url.searchParams.set('categories', '13065'); // Restaurants
-    url.searchParams.set('limit', String(limit));
-    url.searchParams.set('fields', 'fsq_id,name,location,categories,rating,stats,price,hours,tel,website,photos');
 
+  try {
+    // New Foursquare Places API (FSQ OS). The legacy v3 host
+    // (api.foursquare.com/v3) is deprecated (sunset 2026-05-15) and rejects
+    // current-console keys with HTTP 400 "Please provide a valid version."
+    // The new API: places-api.foursquare.com, Bearer auth, and a REQUIRED
+    // X-Places-Api-Version date header. Field/param renames: categories ->
+    // fsq_category_ids, fsq_id -> fsq_place_id, geocodes.main -> top-level
+    // latitude/longitude. We parse defensively (new || legacy) so a partial
+    // rollback or field drift can't null the whole record.
+    const url = new URL('https://places-api.foursquare.com/places/search');
+    url.searchParams.set('ll', `${coords.lat},${coords.lng}`);
+    url.searchParams.set('radius', String(Math.min(radiusMeters, 100000)));
+    url.searchParams.set('fsq_category_ids', '13065'); // Dining and Drinking
+    url.searchParams.set('limit', String(Math.min(limit, 50)));
+    url.searchParams.set('fields', 'fsq_place_id,name,location,categories,latitude,longitude,tel,website,price,rating,hours');
+
+    // Trim the key — a trailing newline from `wrangler secret put` corrupts
+    // the `Bearer <key>` header (FSQ edge returns 400-empty instead of a clean
+    // 401). Cheap insurance against paste artifacts.
     const res = await fetchWithTimeout(url.toString(), {
-      headers: { Authorization: apiKey, Accept: 'application/json' },
+      headers: {
+        Authorization: `Bearer ${apiKey.trim()}`,
+        Accept: 'application/json',
+        'X-Places-Api-Version': '2025-06-17',
+      },
     });
 
     if (!res.ok) {
-      console.error(`[Scraper] Foursquare error: ${res.status}`);
+      // Surface the FSQ error body (e.g. quota/credit messages) — status alone
+      // hides "no API credits remaining" (429) vs a real auth failure (401).
+      const body = await res.text().catch(() => '');
+      console.error(`[Scraper] Foursquare error: ${res.status} ${body.slice(0, 120)}`);
       return [];
     }
 
     const data = await res.json() as any;
-    return (data.results || []).map((p: any) => ({
-      id: `fsq_${p.fsq_id}`,
-      name: p.name,
-      address: p.location?.formatted_address || p.location?.address || '',
-      city: p.location?.locality || coords.city || '',
-      state: p.location?.region || coords.state || '',
-      postalCode: p.location?.postcode || '',
-      country: p.location?.country || coords.country || '',
-      countryCode: p.location?.country_code?.toUpperCase() || coords.countryCode || '',
-      latitude: p.geocodes?.main?.latitude || coords.lat,
-      longitude: p.geocodes?.main?.longitude || coords.lng,
-      phone: p.tel,
-      website: p.website,
-      ratings: {
-        foursquare: p.rating ? p.rating / 2 : undefined, // FSQ uses 10-point scale
-        foursquareReviewCount: p.stats?.total_ratings,
-      },
-      priceRange: p.price ? '$'.repeat(p.price) : undefined,
-      cuisineType: p.categories?.[0]?.name || 'Restaurant',
-      categories: p.categories?.map((c: any) => c.name) || [],
-      photos: p.photos?.map((ph: any) => `${ph.prefix}original${ph.suffix}`) || [],
-      hours: parseFoursquareHours(p.hours),
-      sources: ['foursquare'],
-    }));
+    return (data.results || []).map((p: any) => {
+      const id = p.fsq_place_id || p.fsq_id;
+      const lat = p.latitude ?? p.geocodes?.main?.latitude ?? coords.lat;
+      const lng = p.longitude ?? p.geocodes?.main?.longitude ?? coords.lng;
+      const country = p.location?.country || coords.countryCode || '';
+      return {
+        id: `fsq_${id}`,
+        name: p.name,
+        address: p.location?.formatted_address || p.location?.address || '',
+        city: p.location?.locality || coords.city || '',
+        state: p.location?.region || coords.state || '',
+        postalCode: p.location?.postcode || '',
+        country: country,
+        // New API `location.country` is an ISO-2 code (e.g. "US"); take first
+        // two chars so the trpc-router country filter still matches.
+        countryCode: country.toUpperCase().slice(0, 2) || coords.countryCode || '',
+        latitude: lat,
+        longitude: lng,
+        phone: p.tel,
+        website: p.website,
+        ratings: {
+          foursquare: p.rating ? p.rating / 2 : undefined, // FSQ uses 10-point scale
+          foursquareReviewCount: p.stats?.total_ratings,
+        },
+        priceRange: p.price ? '$'.repeat(p.price) : undefined,
+        cuisineType: p.categories?.[0]?.name || 'Restaurant',
+        categories: p.categories?.map((c: any) => c.name) || [],
+        photos: p.photos?.map((ph: any) => `${ph.prefix}original${ph.suffix}`) || [],
+        hours: parseFoursquareHours(p.hours),
+        sources: ['foursquare'],
+      };
+    });
   } catch (e) {
     console.error('[Scraper] Foursquare fetch error:', e);
     return [];
@@ -335,6 +361,13 @@ async function fetchHERE(
   if (!apiKey) return [];
   
   try {
+    // HERE's /v1/discover REQUIRES a `q` param — a category-only request 400s.
+    // We keep the proven free-text `q=restaurant` and rely on the non-food
+    // deny-list in mergeRestaurants (isNonFoodPlace) to drop the fuzzy matches
+    // it pulls in (e.g. "Action Outdoor Kitchen / Hardware, House & Garden").
+    // A cleaner category-filtered alternative is the /v1/browse endpoint
+    // (categories=100-1000-0000, no q) — switch to that once it's verified
+    // live; the earlier discover+categories+in=circle combo was malformed.
     const url = new URL('https://discover.search.hereapi.com/v1/discover');
     url.searchParams.set('at', `${coords.lat},${coords.lng}`);
     url.searchParams.set('q', 'restaurant');
@@ -704,7 +737,7 @@ function mergeRestaurants(all: Partial<ScrapedRestaurant>[]): ScrapedRestaurant[
       effectivePrimary.id ||
       `merged_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const finalName = effectivePrimary.name || 'Unknown';
-    const finalCuisine = effectivePrimary.cuisineType || 'Restaurant';
+    const finalCuisine = inferCuisine(finalName, allCategories, effectivePrimary.cuisineType);
 
     merged.push({
       id: finalId,
@@ -742,7 +775,11 @@ function mergeRestaurants(all: Partial<ScrapedRestaurant>[]): ScrapedRestaurant[
     });
   }
   
-  return merged.sort((a, b) => b.ratings.aggregated - a.ratings.aggregated);
+  // Drop non-food contamination (hardware stores, salons, etc.) that a fuzzy
+  // provider search may have injected, then sort by aggregated rating.
+  return merged
+    .filter((r) => !isNonFoodPlace(r.categories, r.cuisineType))
+    .sort((a, b) => b.ratings.aggregated - a.ratings.aggregated);
 }
 
 // =============================================================================
@@ -762,6 +799,92 @@ function formatOsmCuisine(cuisine?: string): string {
 function formatGoogleType(t?: string): string | undefined {
   if (!t) return undefined;
   return t.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// Unambiguous non-food category tokens. A real restaurant's category list
+// never contains these, so any record carrying one is contamination — most
+// often from a provider's fuzzy text match (see fetchHERE) — and gets dropped
+// before it can reach the spinner reel. Defense-in-depth: even after the HERE
+// query was category-constrained, cached records and other providers can still
+// surface a non-food place, and this catches them at merge time.
+const NON_FOOD_CATEGORY_TOKENS = [
+  'hardware', 'house & garden', 'home & garden', 'home improvement',
+  'furniture', 'clothing', 'apparel', 'shoe', 'jewelry', 'department store',
+  'grocery', 'supermarket', 'convenience store', 'liquor store', 'pharmacy',
+  'drugstore', 'gas station', 'petrol', 'fuel', 'automotive', 'car repair',
+  'car dealer', 'hotel', 'motel', 'lodging', 'hospital', 'clinic', 'dentist',
+  'bank', 'atm', 'hair salon', 'beauty salon', 'nail salon', 'barber', 'spa',
+  'gym', 'fitness', 'school', 'university', 'church', 'government', 'library',
+  'gallery', 'museum', 'storage', 'real estate',
+];
+
+export function isNonFoodPlace(categories: string[] = [], cuisineType?: string): boolean {
+  const haystack = [...categories, cuisineType || ''].map((c) => c.toLowerCase());
+  return haystack.some((c) => NON_FOOD_CATEGORY_TOKENS.some((tok) => c.includes(tok)));
+}
+
+// Provider categories are unreliable for the user-facing cuisine label —
+// Foursquare buckets a sushi bar as "Fast Food" and a diner as "Bakery", and
+// the merge used to display categories[0] verbatim. Prefer a specific cuisine
+// found in the category list; if none, infer one from distinctive tokens in
+// the restaurant's name; otherwise fall back to the first non-generic category.
+const CUISINE_KEYWORDS: Array<[RegExp, string]> = [
+  [/sushi|japanese|ramen|izakaya|teriyaki|hibachi/i, 'Japanese'],
+  [/pizz|pizzeria/i, 'Pizza'],
+  [/taqueri|taco|mexican|burrito|cantina|tequil/i, 'Mexican'],
+  [/\bthai\b/i, 'Thai'],
+  [/chinese|szechuan|sichuan|dim sum|\bwok\b|mandarin/i, 'Chinese'],
+  [/indian|curry|tandoor|masala|biryani/i, 'Indian'],
+  [/jamaican|caribbean|jerk\b/i, 'Caribbean'],
+  [/vietnam|\bpho\b|banh mi/i, 'Vietnamese'],
+  [/korean|bulgogi|bibimbap/i, 'Korean'],
+  [/mediterran|greek|gyro|falafel|kebab|shawarma|hummus/i, 'Mediterranean'],
+  [/italian|trattoria|ristorante|\bpasta\b/i, 'Italian'],
+  [/french|brasserie|creperie|crêperie/i, 'French'],
+  [/steakhouse|chophouse|\bsteak\b/i, 'Steakhouse'],
+  [/seafood|oyster|\bcrab\b|lobster|fish fry|fish & chips/i, 'Seafood'],
+  [/\bbbq\b|barbecue|barbeque|smokehouse/i, 'Barbecue'],
+  [/burger/i, 'Burgers'],
+  [/diner|blue plate/i, 'Diner'],
+  [/bakery|bakeri|patisserie|pâtisserie|\bpastr/i, 'Bakery'],
+  [/delicatessen|\bdeli\b|sandwich/i, 'Deli'],
+  [/coffee|\bcafe\b|café|espresso|\bjava|roaster/i, 'Cafe'],
+  [/brewery|brewpub|brewing|taproom|alehouse|freehouse|\bpub\b/i, 'Brewpub'],
+  [/vegan|vegetarian|plant.based/i, 'Vegetarian'],
+  [/\basian\b/i, 'Asian'],
+];
+
+const GENERIC_CUISINE_CATEGORIES = new Set([
+  'restaurant', 'restaurants', 'food', 'fast food', 'fast food restaurant',
+  'meal takeaway', 'meal delivery', 'bar', 'point of interest', 'establishment',
+  'casual dining', 'fine dining', 'dining', 'eatery', 'food & drink',
+  // Google's generic `store`/`food` types bleed through as a "cuisine" for
+  // chains like Culver's ("Store"). Treat them as non-cuisines so inferCuisine
+  // falls through to a real label instead of surfacing "Store" to the user.
+  'store', 'food court', 'general',
+]);
+
+export function inferCuisine(name: string, categories: string[] = [], fallback?: string): string {
+  // 1. A specific (non-generic) provider category that maps to a known cuisine.
+  for (const cat of categories) {
+    const c = (cat || '').toLowerCase();
+    if (GENERIC_CUISINE_CATEGORIES.has(c)) continue;
+    for (const [re, label] of CUISINE_KEYWORDS) {
+      if (re.test(c)) return label;
+    }
+  }
+  // 2. Infer from distinctive tokens in the restaurant name.
+  for (const [re, label] of CUISINE_KEYWORDS) {
+    if (re.test(name)) return label;
+  }
+  // 3. First non-generic provider category, else the fallback — but only if
+  // the fallback isn't itself a generic bucket. Otherwise a primary cuisineType
+  // of "Store"/"Fast Food" would leak straight through (Google-sourced Culver's
+  // came in as "Store" with no other signal).
+  const specific = categories.find((c) => c && !GENERIC_CUISINE_CATEGORIES.has(c.toLowerCase()));
+  if (specific) return specific;
+  if (fallback && !GENERIC_CUISINE_CATEGORIES.has(fallback.toLowerCase())) return fallback;
+  return 'Restaurant';
 }
 
 function parseOsmHours(hoursString?: string): Record<string, string> | undefined {
@@ -804,7 +927,11 @@ async function fetchOpenStreetMap(
   try {
     // Overpass QL — node + way coverage for restaurants, fast_food, and
     // cafes that have a cuisine tag (filtering generic coffee shops out).
-    const cuisineFilter = cuisineType ? `["cuisine"~"${cuisineType}",i]` : '';
+    // Sanitize before interpolating into Overpass QL — keep only letters,
+    // digits, space, underscore and hyphen so a crafted cuisineType can't break
+    // out of the regex literal and inject extra (expensive) query clauses.
+    const safeCuisine = cuisineType?.replace(/[^a-zA-Z0-9 _-]/g, '').trim();
+    const cuisineFilter = safeCuisine ? `["cuisine"~"${safeCuisine}",i]` : '';
     const query = `[out:json][timeout:20];(node["amenity"="restaurant"]${cuisineFilter}(around:${radiusMeters},${coords.lat},${coords.lng});node["amenity"="fast_food"]${cuisineFilter}(around:${radiusMeters},${coords.lat},${coords.lng});node["amenity"="cafe"]["cuisine"]${cuisineFilter}(around:${radiusMeters},${coords.lat},${coords.lng});way["amenity"="restaurant"]${cuisineFilter}(around:${radiusMeters},${coords.lat},${coords.lng});way["amenity"="fast_food"]${cuisineFilter}(around:${radiusMeters},${coords.lat},${coords.lng}););out center ${limit};`;
 
     const response = await fetchWithTimeout(
@@ -896,8 +1023,15 @@ async function fetchCulversLocations(
       const meta = loc.metadata || {};
       const lat = loc.geometryCenter?.coordinates?.[1] ?? coords.lat;
       const lng = loc.geometryCenter?.coordinates?.[0] ?? coords.lng;
+      // Culver's locator `description` is a store label ("McFarland, WI -
+      // Farwell St"), NOT the brand. Using it verbatim made the reel show
+      // location strings instead of "Culver's". Use the brand (city-suffixed
+      // so multiple nearby stores stay distinguishable) and keep the street
+      // in `address`. The merge dedups by name+proximity, so the city suffix
+      // also prevents two different-city Culver's from collapsing together.
+      const brandName = meta.city ? `Culver's - ${meta.city}` : "Culver's";
       const externalUrls = generateExternalUrls(
-        loc.description || "Culver's",
+        brandName,
         meta.street || '',
         meta.city || '',
         meta.state || '',
@@ -907,7 +1041,7 @@ async function fetchCulversLocations(
       );
       return {
         id: `culvers_${loc._id}`,
-        name: loc.description || "Culver's",
+        name: brandName,
         address: meta.street || '',
         city: meta.city || '',
         state: meta.state || '',
@@ -1055,27 +1189,41 @@ export async function fetchCulversFlavor(postalCode: string): Promise<{
     if (!res.ok) return null;
 
     const data = await res.json() as any;
-    const locations = (data?.locations || []) as any[];
-    const primary = locations.find((l) => l?.flavorOfTheDay);
+    // Culver's locator returns `data.data.geofences[]` with flavor info under
+    // each geofence's `metadata` — NOT a top-level `locations[]` with a
+    // `flavorOfTheDay` object. The old shape silently yielded zero flavors, so
+    // Flavor of the Day always came back null. Mirror fetchCulversLocations().
+    if (!data?.isSuccessful || !Array.isArray(data?.data?.geofences)) return null;
+    const geofences = data.data.geofences as any[];
 
-    if (!primary?.flavorOfTheDay) return null;
+    const toFlavor = (loc: any) => {
+      const meta = loc?.metadata || {};
+      return {
+        name: meta.city ? `Culver's - ${meta.city}` : "Culver's",
+        flavor: meta.flavorOfDayName || '',
+        description: meta.flavorOfTheDayDescription || '',
+        address: [meta.street, meta.city, meta.state].filter(Boolean).join(', '),
+        imageUrl: meta.flavorOfDaySlug
+          ? `https://www.culvers.com/images/fotd/${meta.flavorOfDaySlug}`
+          : undefined,
+      };
+    };
 
-    const nearby = locations
-      .filter((l) => l !== primary && l?.flavorOfTheDay)
-      .slice(0, 4)
-      .map((l) => ({
-        name: l.name || '',
-        flavor: l.flavorOfTheDay?.name || '',
-        description: l.flavorOfTheDay?.description || '',
-        address: [l.address, l.city, l.state].filter(Boolean).join(', '),
-      }));
+    const withFlavor = geofences.filter((l) => l?.metadata?.flavorOfDayName);
+    if (withFlavor.length === 0) return null;
+    const primary = toFlavor(withFlavor[0]);
+
+    const nearby = withFlavor.slice(1, 5).map((l) => {
+      const f = toFlavor(l);
+      return { name: f.name, flavor: f.flavor, description: f.description, address: f.address };
+    });
 
     return {
-      flavor: primary.flavorOfTheDay.name,
-      description: primary.flavorOfTheDay.description || '',
+      flavor: primary.flavor,
+      description: primary.description,
       locationName: primary.name,
-      address: [primary.address, primary.city, primary.state].filter(Boolean).join(', '),
-      imageUrl: primary.flavorOfTheDay.imageUrl,
+      address: primary.address,
+      imageUrl: primary.imageUrl,
       nearbyLocations: nearby.length > 0 ? nearby : undefined,
     };
   } catch (e) {
@@ -1085,4 +1233,4 @@ export async function fetchCulversFlavor(postalCode: string): Promise<{
 }
 
 // Legacy export for backward compatibility
-export { ScrapeOptions as LegacyScrapeOptions };
+export type { ScrapeOptions as LegacyScrapeOptions };

@@ -105,12 +105,17 @@ export default function RestaurantDetailScreen() {
   const currentNotes = restaurant ? (getRestaurantNotes(restaurant.id) || '') : '';
   const [notesModalVisible, setNotesModalVisible] = useState(false);
 
+  // Depend on a stable boolean, not the restaurant object: a background cache
+  // refresh hands back a new object reference each render, which would re-fire
+  // these effects and re-stamp "recently viewed", corrupting recency order.
+  const restaurantReady = !!restaurant;
+
   // Track this restaurant as recently viewed — only after data has loaded
   useEffect(() => {
-    if (id && restaurant) {
+    if (id && restaurantReady) {
       addToRecentlyViewed(id);
     }
-  }, [id, restaurant, addToRecentlyViewed]);
+  }, [id, restaurantReady, addToRecentlyViewed]);
 
   // Find similar restaurants when id, restaurant, or AI availability changes.
   // Keyed on !!restaurant (not restaurant itself) so late-loading restaurant
@@ -118,7 +123,6 @@ export default function RestaurantDetailScreen() {
   // getFavoriteRestaurants and recentlyViewedIds are intentionally excluded
   // from deps — they produce new array references every render and would
   // cause an infinite loop.
-  const restaurantReady = !!restaurant;
   useEffect(() => {
     if (id && restaurantReady && aiAvailable) {
       const favoriteIds = getFavoriteRestaurants().map(f => f.id);
@@ -438,6 +442,8 @@ export default function RestaurantDetailScreen() {
         <MenuSection
           restaurantId={restaurant.id}
           restaurantName={restaurant.name}
+          latitude={restaurant.latitude}
+          longitude={restaurant.longitude}
           website={restaurant.website || restaurant.menu?.url}
           menuUrl={restaurant.menu?.url}
           menuPhotos={classifiedMenuPhotos}
@@ -482,8 +488,9 @@ export default function RestaurantDetailScreen() {
 
         {/* Community Tips — full modal with suggestions */}
         <PublicNotesSection
-          restaurantId={restaurant.id}
           restaurantName={restaurant.name}
+          latitude={restaurant.latitude}
+          longitude={restaurant.longitude}
           parentScrollRef={scrollViewRef}
         />
 

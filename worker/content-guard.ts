@@ -8,6 +8,7 @@
  */
 
 import type { KVNamespace } from "@cloudflare/workers-types";
+import { hashIdentifier } from "./restaurant-bucket";
 
 // Keep this list in sync with utils/pii-guard.ts BLOCKED_PATTERNS.
 //
@@ -224,11 +225,16 @@ export function guardPublicNote(raw: string): GuardResult {
 export async function checkNoteRateLimit(
   kv: KVNamespace,
   identifier: string,
-  limitPerHour = 10
+  limitPerHour = 10,
+  salt?: string
 ): Promise<{ allowed: boolean; remaining: number; resetAt: number }> {
   const now = Date.now();
   const windowMs = 60 * 60 * 1000; // 1 hour
-  const key = `note_rl:${identifier}`;
+  // When a salt (the Worker pepper) is provided, key on a SALTED HASH of the
+  // identifier so the raw client IP is never written to KV. The short TTL below
+  // means even the hash can't be correlated to a person after the window.
+  const id = salt ? await hashIdentifier(salt, identifier) : identifier;
+  const key = `note_rl:${id}`;
 
   const raw = await kv.get(key);
   let stamps: number[] = [];

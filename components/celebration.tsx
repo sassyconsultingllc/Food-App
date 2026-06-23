@@ -6,7 +6,7 @@
  * Respects user sound/haptic preferences.
  */
 
-import React, { useEffect, useCallback } from "react";
+import React, { useEffect, useCallback, useRef } from "react";
 import { View, StyleSheet, Dimensions, Platform } from "react-native";
 import Animated, {
   useSharedValue,
@@ -44,11 +44,13 @@ function ConfettiPiece({ index, startDelay, onComplete }: ConfettiPieceProps) {
   const scale = useSharedValue(1);
   
   const color = CONFETTI_COLORS[index % CONFETTI_COLORS.length];
-  const startX = Math.random() * SCREEN_WIDTH;
-  const size = 8 + Math.random() * 8;
-  const duration = 2000 + Math.random() * 1000;
-  const swayAmount = 50 + Math.random() * 100;
-  const rotationAmount = 360 + Math.random() * 720;
+  // Compute the random trajectory ONCE per mount — recomputing in the render
+  // body made every confetti piece jump to new positions on any re-render.
+  const startX = useRef(Math.random() * SCREEN_WIDTH).current;
+  const size = useRef(8 + Math.random() * 8).current;
+  const duration = useRef(2000 + Math.random() * 1000).current;
+  const swayAmount = useRef(50 + Math.random() * 100).current;
+  const rotationAmount = useRef(360 + Math.random() * 720).current;
   
   useEffect(() => {
     // Sway left/right

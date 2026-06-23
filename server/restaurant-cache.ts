@@ -11,6 +11,7 @@ import { getDb } from "./db";
 import { restaurantCache, zipCodeCache, InsertCachedRestaurant, CachedRestaurant } from "@/drizzle/schema";
 import { ScrapedRestaurant } from "./restaurant-scraper";
 import { SentimentResult } from "./types";
+import { calculateDistance, geocodePostalCode } from "@/utils/geo-service";
 
 // Cache duration: 7 days for restaurant data
 const CACHE_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -56,8 +57,30 @@ export async function getCachedRestaurants(
     .from(restaurantCache)
     .where(eq(restaurantCache.zipCode, zipCode))
     .limit(100);
-  
-  return results.map(transformCacheToRestaurant);
+
+  const restaurants = results.map(transformCacheToRestaurant);
+
+  // Filter to the requested radius and sort nearest-first, using the ZIP's
+  // geocoded centroid as the origin. The previous code ignored radiusMiles
+  // entirely — a 1-mile and a 25-mile search returned the same rows in
+  // insertion order. If the origin can't be geocoded, fall back to returning
+  // everything (never worse than the old behavior). geocodePostalCode caches
+  // in-memory, so this doesn't re-hit Nominatim on every cache read.
+  const origin = await geocodePostalCode(zipCode, 'US');
+  if (!origin) return restaurants;
+
+  const { lat, lng } = origin.coordinates;
+  return restaurants
+    .map((r) => ({
+      r,
+      distance:
+        r.latitude && r.longitude
+          ? calculateDistance(lat, lng, r.latitude, r.longitude)
+          : Number.POSITIVE_INFINITY,
+    }))
+    .filter((x) => x.distance <= radiusMiles)
+    .sort((a, b) => a.distance - b.distance)
+    .map((x) => x.r);
 }
 
 /**
