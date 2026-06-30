@@ -99,7 +99,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@babel/core": "^7.29.0",
+    "@babel/core": "^7.29.6",
     "@babel/plugin-transform-flow-strip-types": "^7.27.1",
     "@cloudflare/workers-types": "^4.20260213.0",
     "@expo/ngrok": "^4.1.3",
