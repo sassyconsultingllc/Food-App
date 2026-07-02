@@ -13,6 +13,7 @@
       "env": {
         "APP_ENV": "development",
         "EXPO_PUBLIC_API_BASE_URL": "https://foodie-finder.sassyconsultingllc.com",
+        "EXPO_PUBLIC_LICENSE_SERVER_URL": "https://foodie-finder.sassyconsultingllc.com",
         "EXPO_PUBLIC_PRIVACY_POLICY_URL": "https://sassyconsultingllc.com/privacy/foodie-finder/",
         "EXPO_PUBLIC_TERMS_URL": "https://sassyconsultingllc.com/privacy/foodie-finder/terms",
         "EXPO_PUBLIC_PAYWALL_MODE": "enforced",
@@ -30,6 +31,7 @@
       "env": {
         "APP_ENV": "preview",
         "EXPO_PUBLIC_API_BASE_URL": "https://foodie-finder.sassyconsultingllc.com",
+        "EXPO_PUBLIC_LICENSE_SERVER_URL": "https://foodie-finder.sassyconsultingllc.com",
         "EXPO_PUBLIC_PRIVACY_POLICY_URL": "https://sassyconsultingllc.com/privacy/foodie-finder/",
         "EXPO_PUBLIC_TERMS_URL": "https://sassyconsultingllc.com/privacy/foodie-finder/terms",
         "EXPO_PUBLIC_PAYWALL_MODE": "enforced",
@@ -47,6 +49,7 @@
       "env": {
         "APP_ENV": "production",
         "EXPO_PUBLIC_API_BASE_URL": "https://foodie-finder.sassyconsultingllc.com",
+        "EXPO_PUBLIC_LICENSE_SERVER_URL": "https://foodie-finder.sassyconsultingllc.com",
         "EXPO_PUBLIC_PRIVACY_POLICY_URL": "https://sassyconsultingllc.com/privacy/foodie-finder/",
         "EXPO_PUBLIC_TERMS_URL": "https://sassyconsultingllc.com/privacy/foodie-finder/terms",
         "EXPO_PUBLIC_PAYWALL_MODE": "enforced"

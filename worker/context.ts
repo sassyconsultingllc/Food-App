@@ -40,6 +40,17 @@ export interface Env {
   // NEVER commit it or ship it to the client. See worker/restaurant-bucket.ts.
   RESTAURANT_BUCKET_PEPPER?: string;
   
+  // License server (worker/license.ts). Secrets via wrangler secret put:
+  //   STRIPE_SECRET_KEY      - Stripe API key (sk_live_...)
+  //   STRIPE_WEBHOOK_SECRET  - signing secret for /api/license/webhook/stripe
+  //   LICENSE_ADMIN_SECRET   - bearer token for /api/license/admin/* ; unset = admin endpoints 404
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
+  LICENSE_ADMIN_SECRET?: string;
+  // Prices in cents; plain [vars] so they're tunable without a code change.
+  PRICE_PRO_YEARLY_CENTS?: string;
+  PRICE_LIFETIME_CENTS?: string;
+
   // App config
   NODE_ENV?: string;
   VITE_APP_ID?: string;

@@ -25,9 +25,45 @@ section (status, activate, remove license, see perks).
 
 Test keys activate ONLY when `__DEV__` or `EXPO_PUBLIC_ALLOW_TEST_KEYS=1`
 (set in the development and preview eas.json profiles, never production).
-Production activation requires `EXPO_PUBLIC_LICENSE_SERVER_URL` — stand up
-the license server before shipping an enforced build, or paying customers
-have no way to activate.
+Production activation goes through the license server below.
+
+## License server (worker/license.ts)
+
+Lives on the main API worker — `EXPO_PUBLIC_LICENSE_SERVER_URL` points at
+`https://foodie-finder.sassyconsultingllc.com` in every eas.json profile.
+D1 tables (`licenses`, `license_devices`, `license_events`) are created
+lazily on first request, same pattern as the restaurant cache.
+
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| POST `/api/license/activate` | key+email match | Client contract: `{key,email,deviceId}` → `{tier,expiresAt}`. 3-device cap, hashed device ids. |
+| POST `/api/license/deactivate` | key | Frees a device slot. |
+| POST `/api/license/checkout` | — | `{tier,email}` → Stripe checkout URL (503 until Stripe secrets set). |
+| GET `/api/license/claim?session_id=cs_...` | session id (unguessable) | Success page fetches the minted key — no email service needed. 202 while webhook lags. |
+| POST `/api/license/webhook/stripe` | HMAC (timing-safe) | Mints key on `checkout.session.completed` (idempotent per session); subscription lifecycle → suspend/expire. |
+| POST `/api/license/admin/mint` / `admin/revoke` | Bearer `LICENSE_ADMIN_SECRET` | Manual sales, comps, revocation. 404 when secret unset. |
+
+All license routes (except the webhook, which authenticates via HMAC) are
+rate-limited 10/min/IP, fail-closed. Unknown key and wrong email return
+the identical error — no enumeration oracle. Prices are wrangler vars
+(`PRICE_PRO_YEARLY_CENTS=999`, `PRICE_LIFETIME_CENTS=2999`).
+
+### Go-live checklist (in order)
+
+1. `npx wrangler deploy --env production`
+2. `npx wrangler secret put LICENSE_ADMIN_SECRET --env production`
+3. `npx wrangler secret put STRIPE_SECRET_KEY --env production`
+4. In the Stripe dashboard: add webhook endpoint
+   `https://foodie-finder.sassyconsultingllc.com/api/license/webhook/stripe`
+   for `checkout.session.completed`, `customer.subscription.updated`,
+   `customer.subscription.deleted`, `invoice.payment_failed` — then
+   `npx wrangler secret put STRIPE_WEBHOOK_SECRET --env production`
+5. Create the purchase-success page at
+   `sassyconsultingllc.com/foodie-finder/purchase-success` that fetches
+   `/api/license/claim?session_id=...` and displays the key (retry on 202).
+
+Steps 1–2 are enough to sell manually (mint keys yourself, take payment
+however). Steps 3–5 enable self-serve Stripe checkout.
 
 ## Files
 

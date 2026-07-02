@@ -23,71 +23,10 @@ import type { Env } from "./context";
 import type { KVNamespace } from "@cloudflare/workers-types";
 import { hashIdentifier, computeBucketId } from "./restaurant-bucket";
 import { stripImageMetadata } from "./image-metadata";
+import { checkRateLimit, getClientIP } from "./rate-limit";
+import { registerLicenseRoutes } from "./license";
 
 const app = new Hono<{ Bindings: Env }>();
-
-// =============================================================================
-// Rate Limiting Middleware (KV-based sliding window)
-// =============================================================================
-async function checkRateLimit(
-  kv: KVNamespace | undefined,
-  key: string,
-  maxRequests: number,
-  windowSeconds: number,
-  salt?: string
-): Promise<{ allowed: boolean; remaining: number }> {
-  // FAIL CLOSED when KV is missing. A missing binding means an unknown
-  // environment state; we don't want to hand out unlimited requests.
-  // Short-circuit to `allowed: false` and surface the error via 429.
-  if (!kv) return { allowed: false, remaining: 0 };
-
-  // Sliding window: store a list of request timestamps in a rolling
-  // `windowSeconds`-wide window. Previously this was a fixed tumbling
-  // window keyed on floor(now/windowSeconds), which let an attacker
-  // burst 2*maxRequests in ~1 second at a window boundary.
-  const now = Date.now();
-  const windowMs = windowSeconds * 1000;
-  // Salt-hash the key (which embeds the client IP) so the raw IP is never
-  // written to KV. With the short TTL below the hash can't be correlated to a
-  // person after the window. No salt configured -> fall back to the raw key
-  // (rate-limiting still works; it just isn't IP-anonymized).
-  const hashedKey = salt ? await hashIdentifier(salt, key) : key;
-  const storageKey = `rl:${hashedKey}`;
-
-  const raw = await kv.get(storageKey);
-  let stamps: number[] = [];
-  if (raw) {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) stamps = parsed.filter((n) => typeof n === "number");
-    } catch {
-      stamps = [];
-    }
-  }
-
-  // Drop stamps older than the window
-  stamps = stamps.filter((ts) => now - ts < windowMs);
-
-  if (stamps.length >= maxRequests) {
-    return { allowed: false, remaining: 0 };
-  }
-
-  stamps.push(now);
-  await kv.put(storageKey, JSON.stringify(stamps), {
-    expirationTtl: Math.ceil(windowSeconds * 2),
-  });
-  return { allowed: true, remaining: maxRequests - stamps.length };
-}
-
-/**
- * Extract the client IP. ONLY trust `cf-connecting-ip` — it's set by the
- * Cloudflare edge and cannot be spoofed by the client when the request
- * actually transits CF. x-forwarded-for is user-supplied on the
- * workers.dev URL and must never be used for rate-limit keying.
- */
-function getClientIP(c: any): string {
-  return c.req.header("cf-connecting-ip") || "anon";
-}
 
 // Rate limit: tRPC — 60 req/min per IP
 app.use("/api/trpc/*", async (c, next) => {
@@ -113,6 +52,7 @@ app.use("/api/menu/*/upload", async (c, next) => {
 // genuine origin errors).
 const ALLOWED_ORIGINS = [
   "https://foodie-finder.sassyconsultingllc.com",
+  "https://sassyconsultingllc.com", // purchase-success page fetches /api/license/claim
   "http://localhost:8081",  // Expo dev
   "http://localhost:19006", // Expo web dev
 ];
@@ -126,6 +66,10 @@ app.use("/*", cors({
 app.get("/api/health", (c) => {
   return c.json({ ok: true, timestamp: Date.now(), runtime: "cloudflare-workers" });
 });
+
+// License server — activation, Stripe checkout/webhook, admin minting.
+// Client contract in lib/license.ts; docs in docs/PAYWALL.md.
+registerLicenseRoutes(app);
 
 /**
  * Debug endpoints — authenticated only. Require a bearer token that
