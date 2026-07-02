@@ -1,9 +1,33 @@
-# Paywall — Evaluation Mode
+# Paywall — Enforced Mode
 
-Foodie Finder ships with a full paywall infrastructure in the bundle, but
-runs in **evaluation mode** by default. Every premium feature is
-unlocked. The app store listing is free so users can try the full app
-before we monetize.
+Foodie Finder now ships with the paywall **enforced** (flipped 2026-07-02).
+`EXPO_PUBLIC_PAYWALL_MODE=enforced` is set in `.env` and in every eas.json
+build profile. Free-tier users hit gates on Pro features; the PaywallModal
+upsells and routes to `/activate`.
+
+## Wired gates
+
+| Feature | Surface |
+|---|---|
+| unlimited_favorites | Add-favorite past 10 in Browse + Restaurant detail (removal always free) |
+| ai_search | AI mode toggle on Browse |
+| advanced_filters | Dietary chips on Browse; "Filters" sheet on the Spinner |
+| similar_restaurants | "More Like This" on Restaurant detail (AI fetch skipped when unlicensed; Pro teaser shown) |
+| menu_photo_uploads | Upload/camera buttons in MenuSection |
+| spin_history_export, group_decision_mode, ad_free | Catalog-only — no UI exists yet |
+
+Central plumbing: `components/paywall-host.tsx` (`PaywallProvider` +
+`usePaywall().guard/guardLimit/showPaywall`), mounted in `app/_layout.tsx`.
+Activation route: `app/activate.tsx`. Settings has a "Foodie Finder Pro"
+section (status, activate, remove license, see perks).
+
+## Test keys are dev/QA only
+
+Test keys activate ONLY when `__DEV__` or `EXPO_PUBLIC_ALLOW_TEST_KEYS=1`
+(set in the development and preview eas.json profiles, never production).
+Production activation requires `EXPO_PUBLIC_LICENSE_SERVER_URL` — stand up
+the license server before shipping an enforced build, or paying customers
+have no way to activate.
 
 ## Files
 
@@ -41,18 +65,10 @@ if (has("menu_photo_uploads")) {
 }
 ```
 
-## How to flip on real gating later
+## How to revert to evaluation mode
 
-1. In `.env` (or EAS secrets for builds):
-   ```
-   EXPO_PUBLIC_PAYWALL_MODE=enforced
-   ```
-2. Optionally point at a license server:
-   ```
-   EXPO_PUBLIC_LICENSE_SERVER_URL=https://license.sassyconsultingllc.com
-   ```
-3. Ship a build. No code changes required — the gating wrappers in the
-   bundle activate.
+Set `EXPO_PUBLIC_PAYWALL_MODE=evaluation` (or unset it — evaluation is the
+code default) in `.env` and the eas.json profiles, then ship a build.
 
 ## App store listing
 

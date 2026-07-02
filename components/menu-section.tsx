@@ -29,6 +29,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Colors, AppColors, Spacing, BorderRadius } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { getApiBaseUrl } from "@/constants/oauth";
+import { usePaywall } from "@/components/paywall-host";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const MENU_PHOTO_WIDTH = SCREEN_WIDTH * 0.75;
@@ -80,6 +81,7 @@ export function MenuSection({
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
   const insets = useSafeAreaInsets();
+  const { guard } = usePaywall();
 
   const [fullscreenVisible, setFullscreenVisible] = useState(false);
   const [fullscreenIndex, setFullscreenIndex] = useState(0);
@@ -317,6 +319,7 @@ export function MenuSection({
   );
 
   const handleUploadPhoto = useCallback(async () => {
+    if (!guard("menu_photo_uploads")) return;
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       Alert.alert("Permission needed", "Allow photo access to upload menu images.");
@@ -349,9 +352,10 @@ export function MenuSection({
     } finally {
       setUploading(false);
     }
-  }, [filterMenuAssets, uploadAssetsToServer]);
+  }, [filterMenuAssets, uploadAssetsToServer, guard]);
 
   const handleTakePhoto = useCallback(async () => {
+    if (!guard("menu_photo_uploads")) return;
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
       Alert.alert("Permission needed", "Allow camera access to photograph menus.");
@@ -381,7 +385,7 @@ export function MenuSection({
     } finally {
       setUploading(false);
     }
-  }, [filterMenuAssets, uploadAssetsToServer]);
+  }, [filterMenuAssets, uploadAssetsToServer, guard]);
 
   if (!hasMenuContent) {
     return null;

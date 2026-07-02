@@ -33,6 +33,9 @@ import { useRestaurantStorage } from "@/hooks/use-restaurant-storage";
 import { useRecentlyViewed } from "@/hooks/use-recently-viewed";
 import { useClassifiedPhotos } from "@/hooks/use-classified-photos";
 import { useSimilarRestaurants, useVectorStats } from "@/hooks/use-semantic-search";
+import { usePaywall } from "@/components/paywall-host";
+import { useLicense } from "@/hooks/use-license";
+import { FREE_TIER_LIMITS } from "@/lib/license";
 import { shareRestaurant } from "@/utils/share-utils";
 import { formatDisplayAddress, formatMapsAddress } from "@/utils/address-utils";
 
@@ -87,6 +90,9 @@ export default function RestaurantDetailScreen() {
   const colors = Colors[colorScheme ?? "light"];
   const { getRestaurantById, isFavorite, toggleFavorite, getFavoriteRestaurants, loading: dataLoading, updateRestaurantNotes, getRestaurantNotes } = useRestaurantStorage();
   const { addToRecentlyViewed, recentlyViewedIds } = useRecentlyViewed();
+  const { showPaywall, guardLimit } = usePaywall();
+  const { has } = useLicense();
+  const hasSimilarAccess = has("similar_restaurants");
 
   // AI Similar Restaurants
   const { findSimilar, results: similarResults, loading: similarLoading, clear: clearSimilar } = useSimilarRestaurants();
@@ -124,14 +130,17 @@ export default function RestaurantDetailScreen() {
   // from deps — they produce new array references every render and would
   // cause an infinite loop.
   useEffect(() => {
-    if (id && restaurantReady && aiAvailable) {
+    // Skip the AI call entirely for unlicensed users in enforced mode —
+    // the section renders a Pro teaser instead, and we don't pay for
+    // embeddings the user can't see.
+    if (id && restaurantReady && aiAvailable && hasSimilarAccess) {
       const favoriteIds = getFavoriteRestaurants().map(f => f.id);
       const excludeIds = [id, ...favoriteIds, ...recentlyViewedIds.filter(r => r !== id)];
       findSimilar(id, excludeIds);
     }
     return () => clearSimilar();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, restaurantReady, aiAvailable]);
+  }, [id, restaurantReady, aiAvailable, hasSimilarAccess]);
 
   // LOADING STATE: Don't show "not found" while data is still loading
   if (!restaurant && dataLoading) {
@@ -170,6 +179,16 @@ export default function RestaurantDetailScreen() {
 
   const handleFavoritePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // Removing is always free; adding past the free cap needs Pro.
+    if (
+      !favorite &&
+      !guardLimit(
+        "unlimited_favorites",
+        getFavoriteRestaurants().length < FREE_TIER_LIMITS.maxFavorites,
+      )
+    ) {
+      return;
+    }
     toggleFavorite(restaurant);
   };
 
@@ -617,7 +636,7 @@ export default function RestaurantDetailScreen() {
         {/* ============================================================ */}
         {/* AI-POWERED "MORE LIKE THIS" SECTION */}
         {/* ============================================================ */}
-        {aiAvailable && (similarResults.length > 0 || similarLoading) && (
+        {aiAvailable && (!hasSimilarAccess || similarResults.length > 0 || similarLoading) && (
           <View style={[styles.section, { backgroundColor: colors.cardBackground }]}>
             <View style={styles.sectionHeader}>
               <IconSymbol name="sparkles" size={20} color={AppColors.copper} />
@@ -625,8 +644,20 @@ export default function RestaurantDetailScreen() {
                 More Like This
               </ThemedText>
             </View>
-            
-            {similarLoading ? (
+
+            {!hasSimilarAccess ? (
+              <Pressable
+                onPress={() => showPaywall("similar_restaurants")}
+                style={styles.similarLocked}
+                accessibilityRole="button"
+                accessibilityLabel="Unlock similar restaurants with Pro"
+              >
+                <IconSymbol name="lock.fill" size={18} color={AppColors.copper} />
+                <ThemedText style={[styles.similarLockedText, { color: colors.textSecondary }]}>
+                  AI-matched restaurants are a Pro feature — tap to unlock
+                </ThemedText>
+              </Pressable>
+            ) : similarLoading ? (
               <View style={styles.similarLoading}>
                 <ActivityIndicator size="small" color={AppColors.copper} />
                 <ThemedText style={[styles.similarLoadingText, { color: colors.textSecondary }]}>
@@ -1056,6 +1087,16 @@ const styles = StyleSheet.create({
   },
   similarLoadingText: {
     fontSize: 14,
+  },
+  similarLocked: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: Spacing.md,
+    gap: Spacing.sm,
+  },
+  similarLockedText: {
+    fontSize: 14,
+    flexShrink: 1,
   },
   similarList: {
     marginTop: Spacing.xs,

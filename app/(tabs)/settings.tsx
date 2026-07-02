@@ -6,6 +6,7 @@
 import Constants from "expo-constants";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
+import { useRouter } from "expo-router";
 import React, { useState, useEffect } from "react";
 
 // Single source of truth: version + legal URLs come from app.config.ts
@@ -39,16 +40,48 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useRestaurantStorage } from "@/hooks/use-restaurant-storage";
 import { useRecentlyViewed } from "@/hooks/use-recently-viewed";
 import { useTheme } from "@/contexts/theme-context";
+import { useLicense } from "@/hooks/use-license";
+import { usePaywall } from "@/components/paywall-host";
 import { isValidPostalCode } from '@/utils/geo-service';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
+  const router = useRouter();
 
   const { preferences, savePreferences } = useRestaurantStorage();
   const { recentlyViewedCount, clearHistory } = useRecentlyViewed();
   const { themeMode, setThemeMode } = useTheme();
+  const { mode, tier, license, daysRemaining, deactivate } = useLicense();
+  const { showPaywall } = usePaywall();
+
+  const tierLabel =
+    tier === "lifetime" ? "Lifetime" : tier === "pro" ? "Pro" : "Free";
+  const licenseSubtitle =
+    mode === "evaluation"
+      ? "Evaluation build — all features unlocked"
+      : license
+        ? `${tierLabel} · ${license.key}${daysRemaining !== null ? ` · ${daysRemaining} days left` : ""}`
+        : "Free tier — upgrade to unlock Pro features";
+
+  const handleDeactivate = () => {
+    Alert.alert(
+      "Remove License",
+      "This removes the license from this device. You can re-activate with the same key later.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: () => {
+            deactivate();
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          },
+        },
+      ],
+    );
+  };
 
   const [zipCode, setZipCode] = useState(preferences.defaultZipCode || "");
   const [radius, setRadius] = useState(preferences.defaultRadius?.toString() || "5");
@@ -99,6 +132,72 @@ export default function SettingsScreen() {
         <ThemedText type="title" style={styles.title}>
           Settings
         </ThemedText>
+
+        {/* Foodie Finder Pro Section */}
+        <View style={[styles.section, { backgroundColor: colors.cardBackground }]}>
+          <ThemedText type="subtitle" style={styles.sectionTitle}>
+            Foodie Finder Pro
+          </ThemedText>
+
+          <View style={styles.dataItem}>
+            <View style={styles.dataItemLeft}>
+              <IconSymbol
+                name={tier === "free" && mode === "enforced" ? "lock.fill" : "checkmark.seal.fill"}
+                size={20}
+                color={tier === "free" && mode === "enforced" ? colors.textSecondary : AppColors.success}
+              />
+              <View style={styles.proTextBlock}>
+                <ThemedText style={styles.dataItemTitle}>{tierLabel}</ThemedText>
+                <ThemedText style={[styles.dataItemSubtitle, { color: colors.textSecondary }]}>
+                  {licenseSubtitle}
+                </ThemedText>
+              </View>
+            </View>
+          </View>
+
+          <Pressable
+            style={styles.helpItem}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              showPaywall();
+            }}
+            accessibilityLabel="See Pro features"
+            accessibilityRole="button"
+          >
+            <IconSymbol name="sparkles" size={20} color={colors.accent} />
+            <ThemedText style={styles.helpText}>See Pro Features</ThemedText>
+            <IconSymbol name="chevron.right" size={20} color={colors.textSecondary} />
+          </Pressable>
+
+          {license ? (
+            <Pressable
+              style={styles.helpItem}
+              onPress={handleDeactivate}
+              accessibilityLabel="Remove license from this device"
+              accessibilityRole="button"
+            >
+              <IconSymbol name="xmark.circle.fill" size={20} color={colors.error} />
+              <ThemedText style={[styles.helpText, { color: colors.error }]}>
+                Remove License
+              </ThemedText>
+              <IconSymbol name="chevron.right" size={20} color={colors.textSecondary} />
+            </Pressable>
+          ) : (
+            <Pressable
+              style={styles.helpItem}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push("/activate");
+              }}
+              accessibilityLabel="Activate a license key"
+              accessibilityRole="button"
+            >
+              <IconSymbol name="key.fill" size={20} color={colors.accent} />
+              <ThemedText style={styles.helpText}>Activate License</ThemedText>
+              <IconSymbol name="chevron.right" size={20} color={colors.textSecondary} />
+            </Pressable>
+          )}
+        </View>
 
         {/* Default Preferences Section */}
         <View style={[styles.section, { backgroundColor: colors.cardBackground }]}>
@@ -538,6 +637,9 @@ const styles = StyleSheet.create({
   dataItemSubtitle: {
     fontSize: 13,
     marginTop: 2,
+  },
+  proTextBlock: {
+    flexShrink: 1,
   },
   clearButton: {
     paddingHorizontal: Spacing.md,

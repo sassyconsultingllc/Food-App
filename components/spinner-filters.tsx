@@ -24,6 +24,7 @@ import { ThemedView } from "./themed-view";
 import { IconSymbol } from "./ui/icon-symbol";
 import { AppColors, Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
+import { usePaywall } from "./paywall-host";
 
 export interface SpinnerFilters {
   openNow: boolean;
@@ -65,6 +66,7 @@ export function SpinnerFiltersBar({
 }: SpinnerFiltersProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
+  const { guard } = usePaywall();
   const [showFilterModal, setShowFilterModal] = useState(false);
   
   const activeFilterCount = 
@@ -178,6 +180,9 @@ export function SpinnerFiltersBar({
         <Pressable
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            // The full filter sheet (price / cuisine / recency) is Pro.
+            // Open Now stays free on the bar above.
+            if (!guard("advanced_filters")) return;
             setShowFilterModal(true);
           }}
           focusable

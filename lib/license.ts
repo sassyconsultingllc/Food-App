@@ -199,13 +199,20 @@ export async function activateLicense(
 
   // Built-in test keys for local dev / QA. Same shape as the LICENSING.md
   // doc spec so existing test fixtures still work.
+  //
+  // SECURITY: these keys are documented and must never activate a paid
+  // tier in a store build. They work only in dev, or when a build profile
+  // explicitly opts in (eas.json preview sets EXPO_PUBLIC_ALLOW_TEST_KEYS=1
+  // so QA can exercise the enforced-mode activation flow).
+  const testKeysEnabled =
+    __DEV__ || process.env.EXPO_PUBLIC_ALLOW_TEST_KEYS === "1";
   const TEST_KEYS: Record<string, { tier: LicenseTier; days: number | null }> = {
     "FF-TEST-TRIAL-001": { tier: "free", days: 14 },
     "FF-PRO-2024-DEMO": { tier: "pro", days: 365 },
     "FF-LIFETIME-DEMO": { tier: "lifetime", days: null },
   };
 
-  if (TEST_KEYS[key]) {
+  if (testKeysEnabled && TEST_KEYS[key]) {
     const { tier, days } = TEST_KEYS[key];
     const now = Date.now();
     const record: LicenseRecord = {

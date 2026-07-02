@@ -32,6 +32,8 @@ import { Restaurant, DIETARY_OPTIONS, DietaryOption } from "@/types/restaurant";
 import { isOpenNow } from "@/utils/hours-utils";
 import { useAppSounds } from "@/hooks/use-app-sounds";
 import { useSoundSettings } from "@/hooks/use-sound-settings";
+import { usePaywall } from "@/components/paywall-host";
+import { FREE_TIER_LIMITS } from "@/lib/license";
 
 // Quick filter options
 const QUICK_FILTERS = [
@@ -115,6 +117,7 @@ export default function BrowseScreen() {
   const { latitude, longitude } = useLocation();
   const { settings: soundSettings } = useSoundSettings();
   const { playSound } = useAppSounds(soundSettings.soundEnabled);
+  const { guard, guardLimit } = usePaywall();
 
   // Search modes: 'traditional' or 'ai'
   const [searchMode, setSearchMode] = useState<'traditional' | 'ai'>('traditional');
@@ -281,10 +284,13 @@ export default function BrowseScreen() {
 
   const handleSearchModeToggle = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // AI search is a Pro feature — switching INTO ai mode hits the gate;
+    // switching back to traditional is always free.
+    if (searchMode === 'traditional' && !guard('ai_search')) return;
     setSearchMode(prev => prev === 'traditional' ? 'ai' : 'traditional');
     setSearchQuery("");
     aiClear();
-  }, [aiClear]);
+  }, [aiClear, guard, searchMode]);
 
   const handleAIPromptPress = useCallback((prompt: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -308,6 +314,8 @@ export default function BrowseScreen() {
 
   const handleDietaryFilterPress = useCallback((dietary: DietaryOption) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Dietary filtering is part of the advanced-filters Pro feature.
+    if (!guard("advanced_filters")) return;
     setActiveDietaryFilters((prev) => {
       if (prev.includes(dietary)) {
         return prev.filter((d) => d !== dietary);
@@ -315,7 +323,7 @@ export default function BrowseScreen() {
         return [...prev, dietary];
       }
     });
-  }, []);
+  }, [guard]);
 
   const clearFilters = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -354,14 +362,27 @@ export default function BrowseScreen() {
         )}
         <RestaurantCard
           restaurant={item}
-          onFavoritePress={() => { playSound("favorite"); toggleFavorite(item); }}
+          onFavoritePress={() => {
+            // Removing is always free; adding past the free cap needs Pro.
+            if (
+              !isFavorite(item.id) &&
+              !guardLimit(
+                "unlimited_favorites",
+                favoriteRestaurants.length < FREE_TIER_LIMITS.maxFavorites,
+              )
+            ) {
+              return;
+            }
+            playSound("favorite");
+            toggleFavorite(item);
+          }}
           isFavorite={isFavorite(item.id)}
           showDistance={true}
           tasteMatch={isTasteMatch}
         />
       </View>
     );
-  }, [toggleFavorite, isFavorite, cardWidth, searchMode, relevanceScoreById, colors.accent, playSound, profile.sampleSize, matchesTaste]);
+  }, [toggleFavorite, isFavorite, cardWidth, searchMode, relevanceScoreById, colors.accent, playSound, profile.sampleSize, matchesTaste, guardLimit, favoriteRestaurants.length]);
 
   const keyExtractor = useCallback((item: Restaurant) => item.id, []);
 

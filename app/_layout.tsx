@@ -33,6 +33,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { validateEnvironment } from "@/lib/env-validator";
 import { trpc, createTRPCClient } from "@/lib/trpc";
 import { LicenseProvider } from "@/hooks/use-license";
+import { PaywallProvider } from "@/components/paywall-host";
 
 /**
  * Invisible bridge that sits inside the tRPC provider tree and mounts the
@@ -129,16 +130,22 @@ function RootLayoutContent() {
 
   const appContent = (
     <LicenseProvider>
-      <RestaurantSearchProvider>
-        <ErrorBoundary>
-          <ShareHandlerBridge />
-          <Stack>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="modal" options={{ presentation: "modal", title: "Modal" }} />
-            <Stack.Screen name="restaurant/[id]" options={{ headerShown: false }} />
-          </Stack>
-        </ErrorBoundary>
-      </RestaurantSearchProvider>
+      <PaywallProvider>
+        <RestaurantSearchProvider>
+          <ErrorBoundary>
+            <ShareHandlerBridge />
+            <Stack>
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="modal" options={{ presentation: "modal", title: "Modal" }} />
+              <Stack.Screen name="restaurant/[id]" options={{ headerShown: false }} />
+              <Stack.Screen
+                name="activate"
+                options={{ presentation: "modal", title: "Activate License" }}
+              />
+            </Stack>
+          </ErrorBoundary>
+        </RestaurantSearchProvider>
+      </PaywallProvider>
     </LicenseProvider>
   );
 
