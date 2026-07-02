@@ -48,10 +48,39 @@ rate-limited 10/min/IP, fail-closed. Unknown key and wrong email return
 the identical error — no enumeration oracle. Prices are wrangler vars
 (`PRICE_PRO_YEARLY_CENTS=999`, `PRICE_LIFETIME_CENTS=2999`).
 
+### End-user anonymity (enforced at rest)
+
+Our D1 database stores **no direct PII**:
+
+- **Emails are hashed at rest** — `hmac1:<HMAC-SHA256(pepper, email)>` when
+  `LICENSE_EMAIL_PEPPER` is set, `sha256:<hash>` fallback otherwise. The
+  scheme prefix is stored per row, so rows minted before the pepper existed
+  keep validating after it's introduced. Activation compares hashes; the
+  claim endpoint never returns an email.
+- **Device ids** are client-generated random tokens (`dev_<ts>_<rand>` from
+  lib/license.ts — never a hardware id), stored SHA-256 hashed.
+- **No stripe_customer_id** — the only Stripe references kept are the
+  subscription id (renewal lifecycle) and checkout session id (key claim).
+  Payment PII lives entirely at Stripe, which is unavoidable for card
+  payments; a buyer who wants full anonymity can use an alias email there.
+- **IPs are never persisted** — the rate limiter stores pepper-salted hashes
+  with a ~2-minute TTL (existing worker pattern).
+- Nothing in the license code console.logs an email, device id, or IP, so
+  Workers observability captures none either.
+- **Support without PII**: `POST /api/license/admin/lookup {email}` hashes
+  the asker-supplied address server-side and matches at-rest hashes.
+
+Community content was already anonymous (HMAC bucket ids — see
+worker/restaurant-bucket.ts). Net: the only party holding customer PII is
+Stripe, and only for Stripe purchases.
+
 ### Go-live checklist (in order)
 
 1. `npx wrangler deploy --env production`
 2. `npx wrangler secret put LICENSE_ADMIN_SECRET --env production`
+   and `npx wrangler secret put LICENSE_EMAIL_PEPPER --env production`
+   (long random string; set BEFORE the first real mint, never rotate —
+   `hmac1:` email hashes stop verifying under a different pepper)
 3. `npx wrangler secret put STRIPE_SECRET_KEY --env production`
 4. In the Stripe dashboard: add webhook endpoint
    `https://foodie-finder.sassyconsultingllc.com/api/license/webhook/stripe`

@@ -71,6 +71,8 @@ PRICE_LIFETIME_CENTS = "2999"
 # - STRIPE_SECRET_KEY      (sk_live_...)
 # - STRIPE_WEBHOOK_SECRET  (whsec_... for /api/license/webhook/stripe)
 # - LICENSE_ADMIN_SECRET   (bearer for /api/license/admin/*; unset = 404)
+# - LICENSE_EMAIL_PEPPER   (email at-rest HMAC pepper; set BEFORE first real
+#                           mint, never rotate — see worker/license.ts)
 
 # =============================================================================
 # Production Environment

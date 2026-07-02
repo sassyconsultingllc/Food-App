@@ -25,6 +25,21 @@
  *   - Device ids stored as SHA-256 hashes only; device slots capped.
  *   - Webhook HMAC verified with a timing-safe compare.
  *   - Admin endpoint 404s unless LICENSE_ADMIN_SECRET is configured.
+ *
+ * Anonymity: this database stores NO direct PII.
+ *   - Emails are hashed at rest (HMAC-SHA256 with LICENSE_EMAIL_PEPPER when
+ *     set, plain SHA-256 otherwise). Each hash is prefixed with its scheme
+ *     ("hmac1:" / "sha256:") so rows minted before the pepper existed keep
+ *     validating after it's set — but set the pepper BEFORE going live so
+ *     a leaked database can't be dictionary-attacked.
+ *   - Device ids are client-generated random tokens, stored SHA-256 hashed.
+ *   - stripe_customer_id is deliberately NOT stored; the only Stripe
+ *     reference kept is the subscription id (required for renewals) and the
+ *     one-shot checkout session id (key claim). Payment PII lives at Stripe.
+ *   - IPs are never persisted; the rate limiter stores salted hashes with a
+ *     ~2-minute TTL. Nothing here console.logs an email or device id.
+ *   - Support lookups still work: POST /api/license/admin/lookup hashes the
+ *     asker-supplied email server-side and matches against stored hashes.
  */
 
 import type { Hono } from "hono";
@@ -64,11 +79,10 @@ export async function initLicenseTables(db: D1Database): Promise<void> {
       CREATE TABLE IF NOT EXISTS licenses (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         license_key TEXT NOT NULL UNIQUE,
-        email TEXT NOT NULL,
+        email_hash TEXT NOT NULL,
         tier TEXT NOT NULL CHECK (tier IN ('pro','lifetime')),
         status TEXT NOT NULL DEFAULT 'active',
         billing_type TEXT,
-        stripe_customer_id TEXT,
         stripe_subscription_id TEXT,
         stripe_session_id TEXT,
         expires_at INTEGER,
@@ -77,7 +91,7 @@ export async function initLicenseTables(db: D1Database): Promise<void> {
         updated_at INTEGER NOT NULL
       )
     `),
-    db.prepare(`CREATE INDEX IF NOT EXISTS idx_licenses_email ON licenses(email)`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_licenses_email_hash ON licenses(email_hash)`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_licenses_sub ON licenses(stripe_subscription_id)`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_licenses_session ON licenses(stripe_session_id)`),
     db.prepare(`
@@ -103,8 +117,50 @@ export async function initLicenseTables(db: D1Database): Promise<void> {
   ]);
 }
 
-async function ensureLicenseTables(db: D1Database): Promise<void> {
+/**
+ * One-time in-place migration from the short-lived first-cut schema that
+ * stored plaintext emails (column `email`) and stripe_customer_id. Runs
+ * lazily like table creation itself — required because the shared D1
+ * already has the old empty tables, and deploys must never race a manual
+ * migration step. Any row that somehow carries a plaintext email (no
+ * scheme prefix) is hashed in place with the fallback scheme.
+ */
+async function migrateLicenseSchemaIfNeeded(db: D1Database, pepper?: string): Promise<void> {
+  const columns = await db.prepare(`PRAGMA table_info(licenses)`).all<{ name: string }>();
+  const names = new Set((columns.results ?? []).map((c) => c.name));
+  if (names.has("email")) {
+    await db.prepare(`ALTER TABLE licenses RENAME COLUMN email TO email_hash`).run();
+  }
+  if (names.has("stripe_customer_id")) {
+    await db.prepare(`ALTER TABLE licenses DROP COLUMN stripe_customer_id`).run();
+  }
+  if (names.has("email")) {
+    await db.prepare(`DROP INDEX IF EXISTS idx_licenses_email`).run();
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_licenses_email_hash ON licenses(email_hash)`).run();
+    // Hash any plaintext leftovers (defense in depth — the old schema never
+    // shipped to production, so this loop should see zero rows).
+    const plaintext = await db
+      .prepare(
+        `SELECT id, email_hash FROM licenses
+         WHERE email_hash NOT LIKE 'hmac1:%' AND email_hash NOT LIKE 'sha256:%'`
+      )
+      .all<{ id: number; email_hash: string }>();
+    for (const row of plaintext.results ?? []) {
+      await db
+        .prepare(`UPDATE licenses SET email_hash = ? WHERE id = ?`)
+        .bind(await hashEmail(pepper, row.email_hash), row.id)
+        .run();
+    }
+  }
+}
+
+async function ensureLicenseTables(db: D1Database, pepper?: string): Promise<void> {
   if (licenseTablesInitialized) return;
+  // Migration MUST run before init: on a database that still has the old
+  // plaintext-email table, init's CREATE INDEX ...(email_hash) would fail
+  // (CREATE TABLE IF NOT EXISTS no-ops, so the column is still `email`).
+  // On a fresh database the PRAGMA sees no table and migration no-ops.
+  await migrateLicenseSchemaIfNeeded(db, pepper);
   await initLicenseTables(db);
   licenseTablesInitialized = true;
 }
@@ -145,6 +201,49 @@ export async function sha256Hex(input: string): Promise<string> {
     .join("");
 }
 
+export async function hmacSha256Hex(secret: string, input: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(mac))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
+ * Hash an email for at-rest storage. Self-describing scheme prefix so the
+ * pepper can be introduced (or a scheme upgraded) without breaking rows
+ * minted earlier — verification dispatches on the stored prefix.
+ */
+export async function hashEmail(pepper: string | undefined, email: string): Promise<string> {
+  const normalized = normalizeEmail(email);
+  if (pepper) return `hmac1:${await hmacSha256Hex(pepper, normalized)}`;
+  return `sha256:${await sha256Hex(normalized)}`;
+}
+
+export async function emailMatchesHash(
+  pepper: string | undefined,
+  email: string,
+  stored: string
+): Promise<boolean> {
+  const normalized = normalizeEmail(email);
+  if (stored.startsWith("hmac1:")) {
+    // Pepper removed/rotated -> hmac1 rows can no longer verify. Fail
+    // closed rather than silently downgrading.
+    if (!pepper) return false;
+    return timingSafeEqualHex(`hmac1:${await hmacSha256Hex(pepper, normalized)}`, stored);
+  }
+  if (stored.startsWith("sha256:")) {
+    return timingSafeEqualHex(`sha256:${await sha256Hex(normalized)}`, stored);
+  }
+  return false;
+}
+
 export function timingSafeEqualHex(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let diff = 0;
@@ -176,7 +275,7 @@ const INVALID_MSG = "Invalid license key or email.";
 interface LicenseRow {
   id: number;
   license_key: string;
-  email: string;
+  email_hash: string;
   tier: PaidTier;
   status: string;
   expires_at: number | null;
@@ -226,12 +325,11 @@ export async function verifyStripeSignature(
 export async function mintLicense(
   db: D1Database,
   opts: {
-    email: string;
+    emailHash: string; // pre-hashed via hashEmail(); plaintext never reaches this layer
     tier: PaidTier;
     billingType: string;
     days?: number | null; // undefined = tier default
     maxDevices?: number;
-    stripeCustomerId?: string | null;
     stripeSubscriptionId?: string | null;
     stripeSessionId?: string | null;
   }
@@ -247,17 +345,16 @@ export async function mintLicense(
       const result = await db
         .prepare(
           `INSERT INTO licenses
-             (license_key, email, tier, status, billing_type, stripe_customer_id,
+             (license_key, email_hash, tier, status, billing_type,
               stripe_subscription_id, stripe_session_id, expires_at, max_devices,
               created_at, updated_at)
-           VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?)`
+           VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(
           key,
-          normalizeEmail(opts.email),
+          opts.emailHash,
           opts.tier,
           opts.billingType,
-          opts.stripeCustomerId ?? null,
           opts.stripeSubscriptionId ?? null,
           opts.stripeSessionId ?? null,
           expiresAt,
@@ -303,7 +400,7 @@ export function registerLicenseRoutes(app: Hono<{ Bindings: Env }>): void {
   app.post("/api/license/activate", async (c) => {
     const db = c.env.DB;
     if (!db) return c.json({ error: "License service unavailable." }, 503);
-    await ensureLicenseTables(db);
+    await ensureLicenseTables(db, c.env.LICENSE_EMAIL_PEPPER);
 
     let body: { key?: string; email?: string; deviceId?: string };
     try {
@@ -316,7 +413,6 @@ export function registerLicenseRoutes(app: Hono<{ Bindings: Env }>): void {
     }
 
     const key = normalizeKey(body.key);
-    const email = normalizeEmail(body.email);
 
     const license = (await db
       .prepare(`SELECT * FROM licenses WHERE license_key = ?`)
@@ -324,7 +420,11 @@ export function registerLicenseRoutes(app: Hono<{ Bindings: Env }>): void {
       .first()) as LicenseRow | null;
 
     // Same response for unknown key and email mismatch — see INVALID_MSG.
-    if (!license || license.email !== email) {
+    // Emails are never stored in plaintext; compare against the at-rest hash.
+    if (
+      !license ||
+      !(await emailMatchesHash(c.env.LICENSE_EMAIL_PEPPER, body.email, license.email_hash))
+    ) {
       return c.json({ error: INVALID_MSG }, 404);
     }
 
@@ -392,7 +492,7 @@ export function registerLicenseRoutes(app: Hono<{ Bindings: Env }>): void {
   app.post("/api/license/deactivate", async (c) => {
     const db = c.env.DB;
     if (!db) return c.json({ error: "License service unavailable." }, 503);
-    await ensureLicenseTables(db);
+    await ensureLicenseTables(db, c.env.LICENSE_EMAIL_PEPPER);
 
     let body: { key?: string; deviceId?: string };
     try {
@@ -496,7 +596,7 @@ export function registerLicenseRoutes(app: Hono<{ Bindings: Env }>): void {
   app.get("/api/license/claim", async (c) => {
     const db = c.env.DB;
     if (!db) return c.json({ error: "License service unavailable." }, 503);
-    await ensureLicenseTables(db);
+    await ensureLicenseTables(db, c.env.LICENSE_EMAIL_PEPPER);
 
     const sessionId = c.req.query("session_id") || "";
     if (!/^cs_[a-zA-Z0-9_]+$/.test(sessionId)) {
@@ -505,19 +605,20 @@ export function registerLicenseRoutes(app: Hono<{ Bindings: Env }>): void {
 
     const license = await db
       .prepare(
-        `SELECT license_key, tier, email, expires_at FROM licenses WHERE stripe_session_id = ?`
+        `SELECT license_key, tier, expires_at FROM licenses WHERE stripe_session_id = ?`
       )
       .bind(sessionId)
-      .first<{ license_key: string; tier: string; email: string; expires_at: number | null }>();
+      .first<{ license_key: string; tier: string; expires_at: number | null }>();
 
     if (!license) {
       // Webhook may lag checkout by a few seconds — tell the page to retry.
       return c.json({ pending: true }, 202);
     }
+    // No email in the response — we don't have it (hashed at rest), and the
+    // buyer already knows which address they used at checkout.
     return c.json({
       key: license.license_key,
       tier: license.tier,
-      email: license.email,
       expiresAt: license.expires_at,
     });
   });
@@ -529,7 +630,7 @@ export function registerLicenseRoutes(app: Hono<{ Bindings: Env }>): void {
     if (!db || !env.STRIPE_WEBHOOK_SECRET) {
       return c.json({ error: "Not configured." }, 503);
     }
-    await ensureLicenseTables(db);
+    await ensureLicenseTables(db, c.env.LICENSE_EMAIL_PEPPER);
 
     const signature = c.req.header("stripe-signature");
     if (!signature) return c.json({ error: "No signature." }, 400);
@@ -548,7 +649,6 @@ export function registerLicenseRoutes(app: Hono<{ Bindings: Env }>): void {
         case "checkout.session.completed": {
           const session = event.data.object as {
             id: string;
-            customer?: string;
             customer_email?: string;
             customer_details?: { email?: string };
             subscription?: string;
@@ -568,11 +668,12 @@ export function registerLicenseRoutes(app: Hono<{ Bindings: Env }>): void {
             .first();
           if (already) break;
 
+          // Hash immediately — the buyer's email exists only inside this
+          // handler's scope; D1 sees the hash, logs see nothing.
           const { key } = await mintLicense(db, {
-            email,
+            emailHash: await hashEmail(env.LICENSE_EMAIL_PEPPER, email),
             tier,
             billingType: tier === "pro" ? "yearly" : "lifetime",
-            stripeCustomerId: session.customer ?? null,
             stripeSubscriptionId: session.subscription ?? null,
             stripeSessionId: session.id,
           });
@@ -644,7 +745,7 @@ export function registerLicenseRoutes(app: Hono<{ Bindings: Env }>): void {
     if (!requireAdmin(c)) return c.json({ error: "Not found" }, 404);
     const db = c.env.DB;
     if (!db) return c.json({ error: "License service unavailable." }, 503);
-    await ensureLicenseTables(db);
+    await ensureLicenseTables(db, c.env.LICENSE_EMAIL_PEPPER);
 
     let body: { email?: string; tier?: string; days?: number; maxDevices?: number };
     try {
@@ -657,20 +758,55 @@ export function registerLicenseRoutes(app: Hono<{ Bindings: Env }>): void {
       return c.json({ error: "email and tier (pro|lifetime) required." }, 400);
     }
     const { key, expiresAt } = await mintLicense(db, {
-      email: body.email,
+      emailHash: await hashEmail(c.env.LICENSE_EMAIL_PEPPER, body.email),
       tier,
       billingType: "manual",
       days: body.days === undefined ? undefined : body.days,
       maxDevices: body.maxDevices,
     });
+    // Echoing the email back is transient (admin already has it); it is
+    // not persisted anywhere.
     return c.json({ key, email: normalizeEmail(body.email), tier, expiresAt });
+  });
+
+  // Support flow without stored PII: hash the asker-supplied email and
+  // match against at-rest hashes. Only usable with the admin secret.
+  app.post("/api/license/admin/lookup", async (c) => {
+    if (!requireAdmin(c)) return c.json({ error: "Not found" }, 404);
+    const db = c.env.DB;
+    if (!db) return c.json({ error: "License service unavailable." }, 503);
+    await ensureLicenseTables(db, c.env.LICENSE_EMAIL_PEPPER);
+
+    let body: { email?: string };
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid request." }, 400);
+    }
+    if (!body.email) return c.json({ error: "email required." }, 400);
+
+    // A pre-pepper row hashes as sha256:, a post-pepper row as hmac1: —
+    // match either so support lookups survive the pepper being introduced.
+    const hashes = [`sha256:${await sha256Hex(normalizeEmail(body.email))}`];
+    if (c.env.LICENSE_EMAIL_PEPPER) {
+      hashes.push(await hashEmail(c.env.LICENSE_EMAIL_PEPPER, body.email));
+    }
+    const rows = await db
+      .prepare(
+        `SELECT l.license_key, l.tier, l.status, l.billing_type, l.expires_at, l.created_at,
+                (SELECT COUNT(*) FROM license_devices d WHERE d.license_id = l.id AND d.is_active = 1) AS active_devices
+         FROM licenses l WHERE l.email_hash IN (${hashes.map(() => "?").join(",")})`
+      )
+      .bind(...hashes)
+      .all();
+    return c.json({ licenses: rows.results });
   });
 
   app.post("/api/license/admin/revoke", async (c) => {
     if (!requireAdmin(c)) return c.json({ error: "Not found" }, 404);
     const db = c.env.DB;
     if (!db) return c.json({ error: "License service unavailable." }, 503);
-    await ensureLicenseTables(db);
+    await ensureLicenseTables(db, c.env.LICENSE_EMAIL_PEPPER);
 
     let body: { key?: string };
     try {
