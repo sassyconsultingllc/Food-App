@@ -183,11 +183,26 @@ export async function cacheRestaurants(
 
     const deleteOld = db.prepare(`DELETE FROM restaurant_cache WHERE cache_key = ?`).bind(cacheKey);
 
+    // `id` is a GLOBAL primary key, but the same restaurant legitimately
+    // appears under multiple postal cache_keys (overlapping ZIPs in a metro).
+    // deleteOld only clears the current key, so a restaurant already cached
+    // under another ZIP collides on INSERT and aborts the whole batch —
+    // leaving the cache unwritable (observed: no writes since 2026-05). Use
+    // INSERT OR REPLACE so a cross-key collision updates the row to the
+    // current key instead of failing, and dedup intra-batch so the same id
+    // isn't bound twice. Proper long-term fix is a composite PK (cache_key,
+    // id) via migration; this keeps the cache functional without one.
     const insertStmt = db.prepare(`
-      INSERT INTO restaurant_cache (id, cache_key, source_id, name, country_code, data, created_at)
+      INSERT OR REPLACE INTO restaurant_cache (id, cache_key, source_id, name, country_code, data, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
-    const inserts = restaurants.map(r =>
+    const seenIds = new Set<string>();
+    const uniqueRestaurants = restaurants.filter(r => {
+      if (!r.id || seenIds.has(r.id)) return false;
+      seenIds.add(r.id);
+      return true;
+    });
+    const inserts = uniqueRestaurants.map(r =>
       insertStmt.bind(
         r.id,
         cacheKey,
