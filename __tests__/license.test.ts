@@ -8,7 +8,7 @@ import {
   hashEmail,
   emailMatchesHash,
   timingSafeEqualHex,
-  verifyStripeSignature,
+  verifyLemonSqueezySignature,
 } from "../worker/license";
 
 describe("generateLicenseKey", () => {
@@ -96,66 +96,48 @@ describe("email hashing (anonymity at rest)", () => {
   });
 });
 
-describe("verifyStripeSignature", () => {
-  const SECRET = "whsec_test_secret";
+describe("verifyLemonSqueezySignature", () => {
+  const SECRET = "ls_test_webhook_secret";
 
-  async function sign(payload: string, timestamp: number): Promise<string> {
+  async function sign(payload: string, secret: string): Promise<string> {
     const key = await crypto.subtle.importKey(
       "raw",
-      new TextEncoder().encode(SECRET),
+      new TextEncoder().encode(secret),
       { name: "HMAC", hash: "SHA-256" },
       false,
       ["sign"]
     );
-    const mac = await crypto.subtle.sign(
-      "HMAC",
-      key,
-      new TextEncoder().encode(`${timestamp}.${payload}`)
-    );
+    const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
     return Array.from(new Uint8Array(mac))
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
   }
 
   it("accepts a correctly signed payload", async () => {
-    const payload = '{"type":"checkout.session.completed"}';
-    const now = 1_700_000_000;
-    const sig = await sign(payload, now);
-    expect(
-      await verifyStripeSignature(payload, `t=${now},v1=${sig}`, SECRET, now)
-    ).toBe(true);
+    const payload = '{"meta":{"event_name":"order_created"}}';
+    const sig = await sign(payload, SECRET);
+    expect(await verifyLemonSqueezySignature(payload, sig, SECRET)).toBe(true);
+  });
+
+  it("accepts an uppercase-hex signature (case-insensitive compare)", async () => {
+    const payload = '{"a":1}';
+    const sig = await sign(payload, SECRET);
+    expect(await verifyLemonSqueezySignature(payload, sig.toUpperCase(), SECRET)).toBe(true);
   });
 
   it("rejects a tampered payload", async () => {
-    const now = 1_700_000_000;
-    const sig = await sign('{"a":1}', now);
-    expect(await verifyStripeSignature('{"a":2}', `t=${now},v1=${sig}`, SECRET, now)).toBe(false);
+    const sig = await sign('{"a":1}', SECRET);
+    expect(await verifyLemonSqueezySignature('{"a":2}', sig, SECRET)).toBe(false);
   });
 
   it("rejects a wrong secret", async () => {
     const payload = '{"a":1}';
-    const now = 1_700_000_000;
-    const sig = await sign(payload, now);
-    expect(
-      await verifyStripeSignature(payload, `t=${now},v1=${sig}`, "whsec_other", now)
-    ).toBe(false);
+    const sig = await sign(payload, SECRET);
+    expect(await verifyLemonSqueezySignature(payload, sig, "other-secret")).toBe(false);
   });
 
-  it("rejects stale timestamps outside the replay window", async () => {
-    const payload = '{"a":1}';
-    const signedAt = 1_700_000_000;
-    const sig = await sign(payload, signedAt);
-    expect(
-      await verifyStripeSignature(payload, `t=${signedAt},v1=${sig}`, SECRET, signedAt + 301)
-    ).toBe(false);
-    expect(
-      await verifyStripeSignature(payload, `t=${signedAt},v1=${sig}`, SECRET, signedAt + 299)
-    ).toBe(true);
-  });
-
-  it("rejects malformed signature headers", async () => {
-    expect(await verifyStripeSignature("{}", "garbage", SECRET)).toBe(false);
-    expect(await verifyStripeSignature("{}", "t=123", SECRET)).toBe(false);
-    expect(await verifyStripeSignature("{}", "v1=abc", SECRET)).toBe(false);
+  it("rejects a missing signature or secret", async () => {
+    expect(await verifyLemonSqueezySignature("{}", "", SECRET)).toBe(false);
+    expect(await verifyLemonSqueezySignature("{}", "abc123", "")).toBe(false);
   });
 });

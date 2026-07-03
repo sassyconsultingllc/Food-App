@@ -1,5 +1,5 @@
 /**
- * License Server — activation, Stripe checkout, key minting, revocation.
+ * License Server — activation, Lemon Squeezy checkout, key minting, revocation.
  * © 2025 Sassy Consulting - A Veteran Owned Company
  *
  * Backend for the enforced paywall (see docs/PAYWALL.md). The client
@@ -9,12 +9,19 @@
  *   -> 200 { tier: "pro" | "lifetime", expiresAt: epoch-ms | null }
  *   -> 4xx { error }   (client shows res.text() to the user)
  *
- * Purchase flow (no email provider needed):
- *   1. POST /api/license/checkout { tier, email } -> Stripe checkout URL.
- *   2. Stripe -> POST /api/license/webhook/stripe on completion; we mint
- *      the key keyed to the checkout session id.
- *   3. The success page calls GET /api/license/claim?session_id=cs_...
- *      (unguessable, acts as a bearer token) and shows the buyer their key.
+ * Purchase flow (no email provider needed), same shape as the Lemon
+ * Squeezy integration on sassyconsultingllc-cloudflare (src/worker.js):
+ *   1. POST /api/license/checkout { tier, email } -> we mint our own
+ *      correlation ref (crypto.randomUUID()), create a Lemon Squeezy
+ *      checkout via the JSON:API with that ref embedded in
+ *      checkout_data.custom, and return the hosted checkout URL.
+ *   2. Lemon Squeezy -> POST /api/license/webhook/lemonsqueezy on
+ *      order_created (lifetime) / subscription_created (pro), signed via
+ *      HMAC-SHA256 hex of the raw body in the `X-Signature` header. We
+ *      verify, mint the key, and persist keyed by `ref` (payment_ref).
+ *   3. The success page calls GET /api/license/claim?session_id=<ref>
+ *      (a UUID only the buyer's browser has, acts as a bearer token) and
+ *      shows the buyer their key.
  *
  * Manual sales / comps: POST /api/license/admin/mint with
  * `Authorization: Bearer <LICENSE_ADMIN_SECRET>`.
@@ -33,9 +40,10 @@
  *     validating after it's set — but set the pepper BEFORE going live so
  *     a leaked database can't be dictionary-attacked.
  *   - Device ids are client-generated random tokens, stored SHA-256 hashed.
- *   - stripe_customer_id is deliberately NOT stored; the only Stripe
- *     reference kept is the subscription id (required for renewals) and the
- *     one-shot checkout session id (key claim). Payment PII lives at Stripe.
+ *   - No Lemon Squeezy customer id is stored; the only references kept are
+ *     our own correlation ref (payment_ref, for key claim) and the
+ *     subscription id (ls_subscription_id, required for renewal lifecycle
+ *     webhooks). Payment PII (card, billing address) lives at Lemon Squeezy.
  *   - IPs are never persisted; the rate limiter stores salted hashes with a
  *     ~2-minute TTL. Nothing here console.logs an email or device id.
  *   - Support lookups still work: POST /api/license/admin/lookup hashes the
@@ -59,15 +67,25 @@ const TIER_DAYS: Record<PaidTier, number | null> = {
 
 const MAX_DEVICES_DEFAULT = 3;
 
-// Cents. Override via wrangler [vars] without a code change.
-const DEFAULT_PRICE_PRO_YEARLY = 999; // $9.99 / yr
-const DEFAULT_PRICE_LIFETIME = 2999; // $29.99 once
+// Lemon Squeezy checkouts reference a pre-created variant; price is
+// whatever that variant is priced at in the LS dashboard, not something
+// this worker sets per-request (unlike Stripe's dynamic price_data).
+const LS_API = "https://api.lemonsqueezy.com/v1";
 
-function priceFor(env: Env, tier: PaidTier): number {
-  if (tier === "pro") {
-    return parseInt(env.PRICE_PRO_YEARLY_CENTS || "", 10) || DEFAULT_PRICE_PRO_YEARLY;
-  }
-  return parseInt(env.PRICE_LIFETIME_CENTS || "", 10) || DEFAULT_PRICE_LIFETIME;
+function lsHeaders(env: Env): Record<string, string> {
+  return {
+    Authorization: `Bearer ${env.LEMONSQUEEZY_API_KEY}`,
+    Accept: "application/vnd.api+json",
+    "Content-Type": "application/vnd.api+json",
+  };
+}
+
+// pro = LS_VARIANT_PRO (annual subscription), lifetime = LS_VARIANT_LIFETIME
+// (one-time order). Foodie Finder sells one billing period per tier, so —
+// unlike sassyconsultingllc-cloudflare's resolveVariantId — no monthly/
+// annual suffix resolution is needed.
+function variantIdFor(env: Env, tier: PaidTier): string | undefined {
+  return tier === "pro" ? env.LS_VARIANT_PRO : env.LS_VARIANT_LIFETIME;
 }
 
 // ─── Schema (lazy init, same pattern as cache.ts) ────────────────────────
@@ -83,8 +101,8 @@ export async function initLicenseTables(db: D1Database): Promise<void> {
         tier TEXT NOT NULL CHECK (tier IN ('pro','lifetime')),
         status TEXT NOT NULL DEFAULT 'active',
         billing_type TEXT,
-        stripe_subscription_id TEXT,
-        stripe_session_id TEXT,
+        ls_subscription_id TEXT,
+        payment_ref TEXT,
         expires_at INTEGER,
         max_devices INTEGER NOT NULL DEFAULT ${MAX_DEVICES_DEFAULT},
         created_at INTEGER NOT NULL,
@@ -92,8 +110,8 @@ export async function initLicenseTables(db: D1Database): Promise<void> {
       )
     `),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_licenses_email_hash ON licenses(email_hash)`),
-    db.prepare(`CREATE INDEX IF NOT EXISTS idx_licenses_sub ON licenses(stripe_subscription_id)`),
-    db.prepare(`CREATE INDEX IF NOT EXISTS idx_licenses_session ON licenses(stripe_session_id)`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_licenses_sub ON licenses(ls_subscription_id)`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_licenses_ref ON licenses(payment_ref)`),
     db.prepare(`
       CREATE TABLE IF NOT EXISTS license_devices (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -118,11 +136,14 @@ export async function initLicenseTables(db: D1Database): Promise<void> {
 }
 
 /**
- * One-time in-place migration from the short-lived first-cut schema that
- * stored plaintext emails (column `email`) and stripe_customer_id. Runs
- * lazily like table creation itself — required because the shared D1
- * already has the old empty tables, and deploys must never race a manual
- * migration step. Any row that somehow carries a plaintext email (no
+ * One-time in-place migration covering two prior short-lived schemas that
+ * never shipped to production:
+ *   1. Plaintext emails (column `email`) + stripe_customer_id.
+ *   2. Stripe-specific column names (stripe_subscription_id,
+ *      stripe_session_id) from before the Lemon Squeezy port.
+ * Runs lazily like table creation itself — required because the shared D1
+ * already has tables from an earlier schema, and deploys must never race a
+ * manual migration step. Any row that somehow carries a plaintext email (no
  * scheme prefix) is hashed in place with the fallback scheme.
  */
 async function migrateLicenseSchemaIfNeeded(db: D1Database, pepper?: string): Promise<void> {
@@ -133,6 +154,14 @@ async function migrateLicenseSchemaIfNeeded(db: D1Database, pepper?: string): Pr
   }
   if (names.has("stripe_customer_id")) {
     await db.prepare(`ALTER TABLE licenses DROP COLUMN stripe_customer_id`).run();
+  }
+  if (names.has("stripe_subscription_id")) {
+    await db.prepare(`ALTER TABLE licenses RENAME COLUMN stripe_subscription_id TO ls_subscription_id`).run();
+  }
+  if (names.has("stripe_session_id")) {
+    await db.prepare(`ALTER TABLE licenses RENAME COLUMN stripe_session_id TO payment_ref`).run();
+    await db.prepare(`DROP INDEX IF EXISTS idx_licenses_session`).run();
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_licenses_ref ON licenses(payment_ref)`).run();
   }
   if (names.has("email")) {
     await db.prepare(`DROP INDEX IF EXISTS idx_licenses_email`).run();
@@ -280,45 +309,24 @@ interface LicenseRow {
   status: string;
   expires_at: number | null;
   max_devices: number;
-  stripe_subscription_id: string | null;
+  ls_subscription_id: string | null;
 }
 
-// ─── Stripe webhook signature ────────────────────────────────────────────
-export async function verifyStripeSignature(
+// ─── Lemon Squeezy webhook signature ─────────────────────────────────────
+// HMAC-SHA256 hex digest of the raw body, sent in the `X-Signature` header.
+// No timestamp component (unlike Stripe) — LS webhooks aren't replay-guarded
+// by the signature itself; idempotency is handled at mint time instead (see
+// the payment_ref uniqueness check in the checkout.session-equivalent
+// handler below). Same algorithm as sassyconsultingllc-cloudflare's
+// verifyLsSignature (src/worker.js), reusing this file's HMAC helper.
+export async function verifyLemonSqueezySignature(
   payload: string,
-  signatureHeader: string,
-  secret: string,
-  nowSeconds = Math.floor(Date.now() / 1000)
+  signatureHex: string,
+  secret: string
 ): Promise<boolean> {
-  const parts: Record<string, string> = {};
-  for (const part of signatureHeader.split(",")) {
-    const [k, v] = part.split("=");
-    if (k && v) parts[k.trim()] = v.trim();
-  }
-  const timestamp = parts["t"];
-  const sig = parts["v1"];
-  if (!timestamp || !sig) return false;
-
-  // Reject stale signatures (replay window)
-  const tolerance = 300;
-  if (Math.abs(nowSeconds - parseInt(timestamp, 10)) > tolerance) return false;
-
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const mac = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(`${timestamp}.${payload}`)
-  );
-  const expected = Array.from(new Uint8Array(mac))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  return timingSafeEqualHex(expected, sig.toLowerCase());
+  if (!signatureHex || !secret) return false;
+  const expected = await hmacSha256Hex(secret, payload);
+  return timingSafeEqualHex(expected, signatureHex.toLowerCase());
 }
 
 // ─── Minting ─────────────────────────────────────────────────────────────
@@ -330,8 +338,8 @@ export async function mintLicense(
     billingType: string;
     days?: number | null; // undefined = tier default
     maxDevices?: number;
-    stripeSubscriptionId?: string | null;
-    stripeSessionId?: string | null;
+    lsSubscriptionId?: string | null;
+    paymentRef?: string | null;
   }
 ): Promise<{ key: string; expiresAt: number | null }> {
   const now = Date.now();
@@ -346,7 +354,7 @@ export async function mintLicense(
         .prepare(
           `INSERT INTO licenses
              (license_key, email_hash, tier, status, billing_type,
-              stripe_subscription_id, stripe_session_id, expires_at, max_devices,
+              ls_subscription_id, payment_ref, expires_at, max_devices,
               created_at, updated_at)
            VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)`
         )
@@ -355,8 +363,8 @@ export async function mintLicense(
           opts.emailHash,
           opts.tier,
           opts.billingType,
-          opts.stripeSubscriptionId ?? null,
-          opts.stripeSessionId ?? null,
+          opts.lsSubscriptionId ?? null,
+          opts.paymentRef ?? null,
           expiresAt,
           opts.maxDevices ?? MAX_DEVICES_DEFAULT,
           now,
@@ -378,9 +386,9 @@ export function registerLicenseRoutes(app: Hono<{ Bindings: Env }>): void {
   // Rate limit the whole license surface. Tight: these are low-frequency
   // human actions. Fail-closed like every other limiter in this worker.
   app.use("/api/license/*", async (c, next) => {
-    // Stripe's webhook servers must not be throttled with the same budget
-    // as end users; the webhook authenticates via HMAC instead.
-    if (c.req.path === "/api/license/webhook/stripe") return next();
+    // Lemon Squeezy's webhook servers must not be throttled with the same
+    // budget as end users; the webhook authenticates via HMAC instead.
+    if (c.req.path === "/api/license/webhook/lemonsqueezy") return next();
     const ip = getClientIP(c);
     const { allowed, remaining } = await checkRateLimit(
       c.env.RATE_LIMIT,
@@ -523,10 +531,10 @@ export function registerLicenseRoutes(app: Hono<{ Bindings: Env }>): void {
     return c.json({ ok: true });
   });
 
-  // ── Stripe checkout ────────────────────────────────────────────────────
+  // ── Lemon Squeezy checkout ──────────────────────────────────────────────
   app.post("/api/license/checkout", async (c) => {
     const env = c.env;
-    if (!env.STRIPE_SECRET_KEY) {
+    if (!env.LEMONSQUEEZY_API_KEY || !env.LEMONSQUEEZY_STORE_ID) {
       return c.json({ error: "Purchases are not available yet. Check back soon." }, 503);
     }
 
@@ -544,69 +552,76 @@ export function registerLicenseRoutes(app: Hono<{ Bindings: Env }>): void {
       return c.json({ error: "Valid email required — your license key is tied to it." }, 400);
     }
 
-    const amount = priceFor(env, tier);
-    const isSubscription = tier === "pro";
-    const successUrl =
-      body.successUrl ||
-      "https://sassyconsultingllc.com/foodie-finder/purchase-success?session_id={CHECKOUT_SESSION_ID}";
-    const cancelUrl = body.cancelUrl || "https://sassyconsultingllc.com/foodie-finder";
-
-    const params = new URLSearchParams({
-      "payment_method_types[]": "card",
-      mode: isSubscription ? "subscription" : "payment",
-      customer_email: normalizeEmail(body.email),
-      "line_items[0][price_data][currency]": "usd",
-      "line_items[0][price_data][unit_amount]": String(amount),
-      "line_items[0][price_data][product_data][name]":
-        tier === "pro" ? "Foodie Finder Pro (yearly)" : "Foodie Finder Pro — Lifetime",
-      "line_items[0][quantity]": "1",
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-      "metadata[tier]": tier,
-      "metadata[app]": "foodie-finder",
-    });
-    if (isSubscription) {
-      params.set("line_items[0][price_data][recurring][interval]", "year");
-      // metadata on the session isn't copied to the subscription — set it
-      // there too so lifecycle webhooks can identify our subscriptions.
-      params.set("subscription_data[metadata][app]", "foodie-finder");
-      params.set("subscription_data[metadata][tier]", tier);
+    const variantId = variantIdFor(env, tier);
+    if (!variantId) {
+      return c.json({ error: "This plan is not available yet. Check back soon." }, 503);
     }
 
-    const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
-        "Content-Type": "application/x-www-form-urlencoded",
+    // Our own correlation ref (LS's checkout API has no server-side URL
+    // templating like Stripe's {CHECKOUT_SESSION_ID}) — we generate it and
+    // embed it in checkout_data.custom; LS echoes it back on every webhook.
+    const ref = crypto.randomUUID();
+    const successBase =
+      body.successUrl || "https://sassyconsultingllc.com/foodie-finder/purchase-success";
+    const successUrl = `${successBase}${successBase.includes("?") ? "&" : "?"}session_id=${ref}`;
+
+    const payload = {
+      data: {
+        type: "checkouts",
+        attributes: {
+          checkout_data: {
+            email: normalizeEmail(body.email),
+            custom: { ref, tier, app: "foodie-finder" },
+          },
+          checkout_options: { embed: false, media: false, logo: true },
+          product_options: {
+            redirect_url: successUrl,
+            receipt_button_text: "Get my license",
+            receipt_link_url: successUrl,
+          },
+        },
+        relationships: {
+          store: { data: { type: "stores", id: String(env.LEMONSQUEEZY_STORE_ID) } },
+          variant: { data: { type: "variants", id: String(variantId) } },
+        },
       },
-      body: params,
+    };
+
+    const res = await fetch(`${LS_API}/checkouts`, {
+      method: "POST",
+      headers: lsHeaders(env),
+      body: JSON.stringify(payload),
     });
-    const session = (await res.json()) as { url?: string; id?: string; error?: { message: string } };
-    if (!res.ok || session.error || !session.url) {
-      console.error("[license] checkout create failed", session.error?.message);
+    const session = (await res.json()) as {
+      data?: { attributes?: { url?: string } };
+      errors?: Array<{ detail?: string; title?: string }>;
+    };
+    if (!res.ok || session.errors) {
+      console.error("[license] checkout create failed", session.errors?.[0]?.detail);
       return c.json({ error: "Could not start checkout. Try again later." }, 502);
     }
-    return c.json({ checkoutUrl: session.url, sessionId: session.id });
+    const checkoutUrl = session.data?.attributes?.url;
+    if (!checkoutUrl) {
+      return c.json({ error: "Could not start checkout. Try again later." }, 502);
+    }
+    return c.json({ checkoutUrl, sessionId: ref });
   });
 
   // ── Claim (success page fetches the freshly minted key) ───────────────
-  // The cs_... session id is unguessable and only the buyer's browser has
-  // it, so it acts as a single-purpose bearer token. No email service
-  // required to deliver keys.
+  // The ref is a UUID only the buyer's browser has, so it acts as a
+  // single-purpose bearer token. No email service required to deliver keys.
   app.get("/api/license/claim", async (c) => {
     const db = c.env.DB;
     if (!db) return c.json({ error: "License service unavailable." }, 503);
     await ensureLicenseTables(db, c.env.LICENSE_EMAIL_PEPPER);
 
     const sessionId = c.req.query("session_id") || "";
-    if (!/^cs_[a-zA-Z0-9_]+$/.test(sessionId)) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) {
       return c.json({ error: "Invalid session." }, 400);
     }
 
     const license = await db
-      .prepare(
-        `SELECT license_key, tier, expires_at FROM licenses WHERE stripe_session_id = ?`
-      )
+      .prepare(`SELECT license_key, tier, expires_at FROM licenses WHERE payment_ref = ?`)
       .bind(sessionId)
       .first<{ license_key: string; tier: string; expires_at: number | null }>();
 
@@ -623,48 +638,68 @@ export function registerLicenseRoutes(app: Hono<{ Bindings: Env }>): void {
     });
   });
 
-  // ── Stripe webhook ─────────────────────────────────────────────────────
-  app.post("/api/license/webhook/stripe", async (c) => {
+  // ── Lemon Squeezy webhook ───────────────────────────────────────────────
+  // Subscribe this endpoint to: order_created, subscription_created,
+  // subscription_updated, subscription_payment_failed (LS dashboard or
+  // scripts/finish-lemonsqueezy.ps1-style setup in the sassy site repo).
+  app.post("/api/license/webhook/lemonsqueezy", async (c) => {
     const env = c.env;
     const db = env.DB;
-    if (!db || !env.STRIPE_WEBHOOK_SECRET) {
+    if (!db || !env.LEMONSQUEEZY_WEBHOOK_SECRET) {
       return c.json({ error: "Not configured." }, 503);
     }
     await ensureLicenseTables(db, c.env.LICENSE_EMAIL_PEPPER);
 
-    const signature = c.req.header("stripe-signature");
+    const signature = c.req.header("X-Signature");
     if (!signature) return c.json({ error: "No signature." }, 400);
 
+    // Raw body FIRST — the signature covers the exact bytes LS sent, and
+    // reading .text() before .json() means a bad signature never reaches JSON.parse.
     const payload = await c.req.text();
-    const valid = await verifyStripeSignature(payload, signature, env.STRIPE_WEBHOOK_SECRET);
+    const valid = await verifyLemonSqueezySignature(
+      payload,
+      signature,
+      env.LEMONSQUEEZY_WEBHOOK_SECRET
+    );
     if (!valid) return c.json({ error: "Invalid signature." }, 401);
 
-    const event = JSON.parse(payload) as {
-      type: string;
-      data: { object: Record<string, unknown> };
+    let event: {
+      meta?: { event_name?: string; custom_data?: { ref?: string; tier?: string; app?: string } };
+      data?: { id?: string; attributes?: Record<string, unknown> };
     };
+    try {
+      event = JSON.parse(payload);
+    } catch {
+      return c.json({ error: "Invalid JSON." }, 400);
+    }
+
+    const eventName = event.meta?.event_name || "";
+    const custom = event.meta?.custom_data || {};
+    const attrs = (event.data?.attributes || {}) as {
+      user_email?: string;
+      customer_email?: string;
+      status?: string;
+      renews_at?: string;
+      ends_at?: string;
+    };
+    const lsId = event.data?.id || ""; // order id or subscription id, per event
 
     try {
-      switch (event.type) {
-        case "checkout.session.completed": {
-          const session = event.data.object as {
-            id: string;
-            customer_email?: string;
-            customer_details?: { email?: string };
-            subscription?: string;
-            metadata?: { tier?: string; app?: string };
-          };
-          if (session.metadata?.app !== "foodie-finder") break; // other product on same Stripe acct
-          const email = session.customer_email || session.customer_details?.email;
-          const tier = session.metadata?.tier as PaidTier | undefined;
-          if (!email || (tier !== "pro" && tier !== "lifetime")) {
-            console.error("[license] webhook: missing email/tier on session", session.id);
+      switch (eventName) {
+        case "order_created":
+        case "subscription_created": {
+          if (custom.app !== "foodie-finder") break; // other product on the same LS store
+          const ref = custom.ref;
+          const email = attrs.user_email || attrs.customer_email;
+          const tier = custom.tier as PaidTier | undefined;
+          if (!ref || !email || (tier !== "pro" && tier !== "lifetime")) {
+            console.error("[license] webhook: missing ref/email/tier", eventName, lsId);
             break;
           }
-          // Idempotency: Stripe retries webhooks — don't double-mint.
+          // Idempotency: Lemon Squeezy retries on non-2xx — don't double-mint.
           const already = await db
-            .prepare(`SELECT id FROM licenses WHERE stripe_session_id = ?`)
-            .bind(session.id)
+            .prepare(`SELECT id FROM licenses WHERE payment_ref = ?`)
+            .bind(ref)
             .first();
           if (already) break;
 
@@ -674,52 +709,47 @@ export function registerLicenseRoutes(app: Hono<{ Bindings: Env }>): void {
             emailHash: await hashEmail(env.LICENSE_EMAIL_PEPPER, email),
             tier,
             billingType: tier === "pro" ? "yearly" : "lifetime",
-            stripeSubscriptionId: session.subscription ?? null,
-            stripeSessionId: session.id,
+            lsSubscriptionId: eventName === "subscription_created" ? lsId : null,
+            paymentRef: ref,
           });
-          console.log(`[license] minted ${key.slice(0, 8)}… for checkout ${session.id}`);
+          console.log(`[license] minted ${key.slice(0, 8)}… for ${eventName} ${ref}`);
           break;
         }
-        case "customer.subscription.updated": {
-          const sub = event.data.object as {
-            id: string;
-            status: string;
-            current_period_end: number;
-            metadata?: { app?: string };
-          };
+        // Lemon Squeezy fires subscription_updated on every status change
+        // (renewal, cancellation, expiry, un-pause, …) — attrs.status is the
+        // single source of truth, so one handler covers the full lifecycle
+        // instead of separate cancelled/expired/resumed cases.
+        case "subscription_updated": {
           const license = await db
-            .prepare(`SELECT id FROM licenses WHERE stripe_subscription_id = ?`)
-            .bind(sub.id)
+            .prepare(`SELECT id FROM licenses WHERE ls_subscription_id = ?`)
+            .bind(lsId)
             .first<{ id: number }>();
           if (!license) break;
+
+          const lsStatus = attrs.status || "";
           let status = "active";
-          if (sub.status === "past_due") status = "suspended";
-          if (sub.status === "canceled" || sub.status === "unpaid") status = "expired";
+          if (lsStatus === "past_due" || lsStatus === "paused") status = "suspended";
+          if (lsStatus === "unpaid" || lsStatus === "expired") status = "expired";
+          // "cancelled" keeps access through the paid period — status stays
+          // active and expires_at (from ends_at) enforces the cutoff.
+
+          const expiresSource = attrs.ends_at || attrs.renews_at;
+          const expiresAt = expiresSource ? Date.parse(expiresSource) : null;
           await db
             .prepare(`UPDATE licenses SET status = ?, expires_at = ?, updated_at = ? WHERE id = ?`)
-            .bind(status, sub.current_period_end * 1000, Date.now(), license.id)
+            .bind(status, expiresAt, Date.now(), license.id)
             .run();
-          await logEvent(db, license.id, "subscription_updated", sub.status);
+          await logEvent(db, license.id, "subscription_updated", lsStatus);
           break;
         }
-        case "customer.subscription.deleted": {
-          const sub = event.data.object as { id: string };
+        // Defense in depth in case subscription_updated lags or is missed —
+        // force-suspend on the explicit failure event.
+        case "subscription_payment_failed": {
           await db
             .prepare(
-              `UPDATE licenses SET status = 'expired', updated_at = ? WHERE stripe_subscription_id = ?`
+              `UPDATE licenses SET status = 'suspended', updated_at = ? WHERE ls_subscription_id = ?`
             )
-            .bind(Date.now(), sub.id)
-            .run();
-          break;
-        }
-        case "invoice.payment_failed": {
-          const invoice = event.data.object as { subscription?: string };
-          if (!invoice.subscription) break;
-          await db
-            .prepare(
-              `UPDATE licenses SET status = 'suspended', updated_at = ? WHERE stripe_subscription_id = ?`
-            )
-            .bind(Date.now(), invoice.subscription)
+            .bind(Date.now(), lsId)
             .run();
           break;
         }
@@ -727,7 +757,7 @@ export function registerLicenseRoutes(app: Hono<{ Bindings: Env }>): void {
       return c.json({ received: true });
     } catch (err) {
       console.error("[license] webhook handler error", err);
-      // 500 so Stripe retries.
+      // 500 so Lemon Squeezy retries.
       return c.json({ error: "Handler error." }, 500);
     }
   });

@@ -34,19 +34,24 @@ Lives on the main API worker — `EXPO_PUBLIC_LICENSE_SERVER_URL` points at
 D1 tables (`licenses`, `license_devices`, `license_events`) are created
 lazily on first request, same pattern as the restaurant cache.
 
+Payment provider is **Lemon Squeezy** — same account and integration
+pattern as `sassyconsultingllc-cloudflare` (`src/worker.js`), store "Sassy
+Apps". Checkout price comes entirely from the LS variant configured in the
+dashboard (`LS_VARIANT_PRO`, `LS_VARIANT_LIFETIME`); this worker doesn't
+set a price per request.
+
 | Endpoint | Auth | Purpose |
 |---|---|---|
 | POST `/api/license/activate` | key+email match | Client contract: `{key,email,deviceId}` → `{tier,expiresAt}`. 3-device cap, hashed device ids. |
 | POST `/api/license/deactivate` | key | Frees a device slot. |
-| POST `/api/license/checkout` | — | `{tier,email}` → Stripe checkout URL (503 until Stripe secrets set). |
-| GET `/api/license/claim?session_id=cs_...` | session id (unguessable) | Success page fetches the minted key — no email service needed. 202 while webhook lags. |
-| POST `/api/license/webhook/stripe` | HMAC (timing-safe) | Mints key on `checkout.session.completed` (idempotent per session); subscription lifecycle → suspend/expire. |
+| POST `/api/license/checkout` | — | `{tier,email}` → Lemon Squeezy checkout URL (503 until LS secrets set). |
+| GET `/api/license/claim?session_id=<uuid>` | ref (unguessable UUID) | Success page fetches the minted key — no email service needed. 202 while webhook lags. |
+| POST `/api/license/webhook/lemonsqueezy` | HMAC (timing-safe) | Mints key on `order_created`/`subscription_created` (idempotent per `payment_ref`); `subscription_updated` drives the full status lifecycle (active/cancelled/past_due/expired) from LS's `status` field; `subscription_payment_failed` force-suspends. |
 | POST `/api/license/admin/mint` / `admin/revoke` | Bearer `LICENSE_ADMIN_SECRET` | Manual sales, comps, revocation. 404 when secret unset. |
 
 All license routes (except the webhook, which authenticates via HMAC) are
 rate-limited 10/min/IP, fail-closed. Unknown key and wrong email return
-the identical error — no enumeration oracle. Prices are wrangler vars
-(`PRICE_PRO_YEARLY_CENTS=999`, `PRICE_LIFETIME_CENTS=2999`).
+the identical error — no enumeration oracle.
 
 ### End-user anonymity (enforced at rest)
 
@@ -59,10 +64,12 @@ Our D1 database stores **no direct PII**:
   claim endpoint never returns an email.
 - **Device ids** are client-generated random tokens (`dev_<ts>_<rand>` from
   lib/license.ts — never a hardware id), stored SHA-256 hashed.
-- **No stripe_customer_id** — the only Stripe references kept are the
-  subscription id (renewal lifecycle) and checkout session id (key claim).
-  Payment PII lives entirely at Stripe, which is unavoidable for card
-  payments; a buyer who wants full anonymity can use an alias email there.
+- **No Lemon Squeezy customer id stored** — the only references kept are
+  our own correlation ref (`payment_ref`, for key claim) and the
+  subscription id (`ls_subscription_id`, renewal lifecycle). Payment PII
+  (card, billing address) lives entirely at Lemon Squeezy, which is
+  unavoidable for card payments; a buyer who wants full anonymity can use
+  an alias email there.
 - **IPs are never persisted** — the rate limiter stores pepper-salted hashes
   with a ~2-minute TTL (existing worker pattern).
 - Nothing in the license code console.logs an email, device id, or IP, so
@@ -72,7 +79,7 @@ Our D1 database stores **no direct PII**:
 
 Community content was already anonymous (HMAC bucket ids — see
 worker/restaurant-bucket.ts). Net: the only party holding customer PII is
-Stripe, and only for Stripe purchases.
+Lemon Squeezy, and only for Lemon Squeezy purchases.
 
 ### Go-live checklist (in order)
 
@@ -81,18 +88,25 @@ Stripe, and only for Stripe purchases.
    and `npx wrangler secret put LICENSE_EMAIL_PEPPER --env production`
    (long random string; set BEFORE the first real mint, never rotate —
    `hmac1:` email hashes stop verifying under a different pepper)
-3. `npx wrangler secret put STRIPE_SECRET_KEY --env production`
-4. In the Stripe dashboard: add webhook endpoint
-   `https://foodie-finder.sassyconsultingllc.com/api/license/webhook/stripe`
-   for `checkout.session.completed`, `customer.subscription.updated`,
-   `customer.subscription.deleted`, `invoice.payment_failed` — then
-   `npx wrangler secret put STRIPE_WEBHOOK_SECRET --env production`
-5. Create the purchase-success page at
+3. In the Lemon Squeezy dashboard (store "Sassy Apps"): create the Pro
+   (yearly subscription) and Lifetime (one-time) products/variants, then
+   `npx wrangler secret put LS_VARIANT_PRO --env production` and
+   `npx wrangler secret put LS_VARIANT_LIFETIME --env production` with
+   their variant ids.
+4. `npx wrangler secret put LEMONSQUEEZY_API_KEY --env production` and
+   `npx wrangler secret put LEMONSQUEEZY_STORE_ID --env production`
+5. Add a webhook endpoint in the LS dashboard pointing at
+   `https://foodie-finder.sassyconsultingllc.com/api/license/webhook/lemonsqueezy`
+   for `order_created`, `subscription_created`, `subscription_updated`,
+   `subscription_payment_failed` — then
+   `npx wrangler secret put LEMONSQUEEZY_WEBHOOK_SECRET --env production`
+   with the secret LS generates for it.
+6. Create the purchase-success page at
    `sassyconsultingllc.com/foodie-finder/purchase-success` that fetches
    `/api/license/claim?session_id=...` and displays the key (retry on 202).
 
 Steps 1–2 are enough to sell manually (mint keys yourself, take payment
-however). Steps 3–5 enable self-serve Stripe checkout.
+however). Steps 3–6 enable self-serve Lemon Squeezy checkout.
 
 ## Files
 

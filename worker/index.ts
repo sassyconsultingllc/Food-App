@@ -67,7 +67,7 @@ app.get("/api/health", (c) => {
   return c.json({ ok: true, timestamp: Date.now(), runtime: "cloudflare-workers" });
 });
 
-// License server — activation, Stripe checkout/webhook, admin minting.
+// License server — activation, Lemon Squeezy checkout/webhook, admin minting.
 // Client contract in lib/license.ts; docs in docs/PAYWALL.md.
 registerLicenseRoutes(app);
 

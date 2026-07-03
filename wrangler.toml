@@ -58,21 +58,24 @@ preview_id = "ed9cea80bd01428daa45d3356d028196"
 [vars]
 NODE_ENV = "production"
 VITE_APP_ID = "foodie-finder"
-# License pricing in cents — tunable without a code change (worker/license.ts)
-PRICE_PRO_YEARLY_CENTS = "999"
-PRICE_LIFETIME_CENTS = "2999"
 
 # Secrets (set via: wrangler secret put <n>)
 # - GOOGLE_PLACES_API_KEY
 # - FOURSQUARE_API_KEY
 # - HERE_API_KEY
 # - JWT_SECRET
-# License server (worker/license.ts):
-# - STRIPE_SECRET_KEY      (sk_live_...)
-# - STRIPE_WEBHOOK_SECRET  (whsec_... for /api/license/webhook/stripe)
-# - LICENSE_ADMIN_SECRET   (bearer for /api/license/admin/*; unset = 404)
-# - LICENSE_EMAIL_PEPPER   (email at-rest HMAC pepper; set BEFORE first real
-#                           mint, never rotate — see worker/license.ts)
+# License server (worker/license.ts) — Lemon Squeezy, same account/pattern
+# as sassyconsultingllc-cloudflare (store "Sassy Apps"):
+# - LEMONSQUEEZY_API_KEY      (LS API key, used to create checkouts)
+# - LEMONSQUEEZY_STORE_ID     (numeric store id)
+# - LEMONSQUEEZY_WEBHOOK_SECRET (signing secret for /api/license/webhook/lemonsqueezy;
+#                                 subscribe it to order_created, subscription_created,
+#                                 subscription_updated, subscription_payment_failed)
+# - LS_VARIANT_PRO            (LS variant id for the Pro yearly subscription)
+# - LS_VARIANT_LIFETIME       (LS variant id for the Lifetime one-time purchase)
+# - LICENSE_ADMIN_SECRET      (bearer for /api/license/admin/*; unset = 404)
+# - LICENSE_EMAIL_PEPPER      (email at-rest HMAC pepper; set BEFORE first real
+#                              mint, never rotate — see worker/license.ts)
 
 # =============================================================================
 # Production Environment
@@ -115,8 +118,6 @@ id = "e877b50e6c7443698e0c8be6362e39b4"
 [env.production.vars]
 NODE_ENV = "production"
 VITE_APP_ID = "foodie-finder"
-PRICE_PRO_YEARLY_CENTS = "999"
-PRICE_LIFETIME_CENTS = "2999"
 
 # =============================================================================
 # Preview Environment
@@ -157,5 +158,3 @@ preview_id = "ed9cea80bd01428daa45d3356d028196"
 [env.preview.vars]
 NODE_ENV = "preview"
 VITE_APP_ID = "foodie-finder"
-PRICE_PRO_YEARLY_CENTS = "999"
-PRICE_LIFETIME_CENTS = "2999"

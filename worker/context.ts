@@ -40,22 +40,27 @@ export interface Env {
   // NEVER commit it or ship it to the client. See worker/restaurant-bucket.ts.
   RESTAURANT_BUCKET_PEPPER?: string;
   
-  // License server (worker/license.ts). Secrets via wrangler secret put:
-  //   STRIPE_SECRET_KEY      - Stripe API key (sk_live_...)
-  //   STRIPE_WEBHOOK_SECRET  - signing secret for /api/license/webhook/stripe
-  //   LICENSE_ADMIN_SECRET   - bearer token for /api/license/admin/* ; unset = admin endpoints 404
-  //   LICENSE_EMAIL_PEPPER   - HMAC pepper for at-rest email hashing. Set it
-  //                            BEFORE the first real license is minted and
-  //                            never rotate it (hmac1: rows stop verifying).
-  //                            Unset -> plain SHA-256 fallback (functional,
-  //                            but dictionary-attackable if D1 leaks).
-  STRIPE_SECRET_KEY?: string;
-  STRIPE_WEBHOOK_SECRET?: string;
+  // License server (worker/license.ts). Payment provider is Lemon Squeezy
+  // — same account/pattern as sassyconsultingllc-cloudflare (src/worker.js).
+  // Secrets via wrangler secret put:
+  //   LEMONSQUEEZY_API_KEY      - LS API key, used to create checkouts
+  //   LEMONSQUEEZY_STORE_ID     - numeric store id (e.g. 382820 = "Sassy Apps")
+  //   LEMONSQUEEZY_WEBHOOK_SECRET - signing secret for /api/license/webhook/lemonsqueezy
+  //   LICENSE_ADMIN_SECRET      - bearer token for /api/license/admin/* ; unset = admin endpoints 404
+  //   LICENSE_EMAIL_PEPPER      - HMAC pepper for at-rest email hashing. Set it
+  //                               BEFORE the first real license is minted and
+  //                               never rotate it (hmac1: rows stop verifying).
+  //                               Unset -> plain SHA-256 fallback (functional,
+  //                               but dictionary-attackable if D1 leaks).
+  LEMONSQUEEZY_API_KEY?: string;
+  LEMONSQUEEZY_STORE_ID?: string;
+  LEMONSQUEEZY_WEBHOOK_SECRET?: string;
   LICENSE_ADMIN_SECRET?: string;
   LICENSE_EMAIL_PEPPER?: string;
-  // Prices in cents; plain [vars] so they're tunable without a code change.
-  PRICE_PRO_YEARLY_CENTS?: string;
-  PRICE_LIFETIME_CENTS?: string;
+  // Lemon Squeezy variant ids for each paid tier (LS dashboard -> Products).
+  // Price is whatever the variant is priced at in LS, not set by this worker.
+  LS_VARIANT_PRO?: string;
+  LS_VARIANT_LIFETIME?: string;
 
   // App config
   NODE_ENV?: string;
