@@ -25,6 +25,7 @@ import { hashIdentifier, computeBucketId } from "./restaurant-bucket";
 import { stripImageMetadata } from "./image-metadata";
 import { checkRateLimit, getClientIP } from "./rate-limit";
 import { registerLicenseRoutes } from "./license";
+import { registerPurchaseSuccess } from "./purchase-success";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -70,6 +71,10 @@ app.get("/api/health", (c) => {
 // License server — activation, Lemon Squeezy checkout/webhook, admin minting.
 // Client contract in lib/license.ts; docs in docs/PAYWALL.md.
 registerLicenseRoutes(app);
+
+// Buyer-facing "here's your key" page, served same-origin so it can poll
+// /api/license/claim without CORS. Lemon Squeezy redirects here post-checkout.
+registerPurchaseSuccess(app);
 
 /**
  * Debug endpoints — authenticated only. Require a bearer token that

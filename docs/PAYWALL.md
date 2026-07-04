@@ -101,12 +101,15 @@ Lemon Squeezy, and only for Lemon Squeezy purchases.
    `subscription_payment_failed` — then
    `npx wrangler secret put LEMONSQUEEZY_WEBHOOK_SECRET --env production`
    with the secret LS generates for it.
-6. Create the purchase-success page at
-   `sassyconsultingllc.com/foodie-finder/purchase-success` that fetches
-   `/api/license/claim?session_id=...` and displays the key (retry on 202).
+6. Purchase-success page — already built and served same-origin by this
+   worker at `foodie-finder.sassyconsultingllc.com/purchase-success`
+   (worker/purchase-success.ts). It polls `/api/license/claim?session_id=...`
+   and shows the key. Nothing to deploy separately; it ships with the
+   worker. The checkout `redirect_url` defaults to it.
 
 Steps 1–2 are enough to sell manually (mint keys yourself, take payment
-however). Steps 3–6 enable self-serve Lemon Squeezy checkout.
+however). Steps 3–5 enable self-serve Lemon Squeezy checkout (step 6 is
+already done in code).
 
 ## Files
 

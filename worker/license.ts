@@ -561,8 +561,11 @@ export function registerLicenseRoutes(app: Hono<{ Bindings: Env }>): void {
     // templating like Stripe's {CHECKOUT_SESSION_ID}) — we generate it and
     // embed it in checkout_data.custom; LS echoes it back on every webhook.
     const ref = crypto.randomUUID();
+    // Default to the same-origin success page this worker serves (see
+    // worker/purchase-success.ts) so the key-claim fetch has no CORS/CSP
+    // hop. Overridable via body.successUrl for other front-ends.
     const successBase =
-      body.successUrl || "https://sassyconsultingllc.com/foodie-finder/purchase-success";
+      body.successUrl || "https://foodie-finder.sassyconsultingllc.com/purchase-success";
     const successUrl = `${successBase}${successBase.includes("?") ? "&" : "?"}session_id=${ref}`;
 
     const payload = {
