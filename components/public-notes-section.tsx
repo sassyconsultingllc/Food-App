@@ -16,7 +16,6 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
-  findNodeHandle,
 } from "react-native";
 import * as Haptics from "expo-haptics";
 
@@ -86,11 +85,21 @@ export function PublicNotesSection({
   const scrollInputIntoView = () => {
     const scroll = parentScrollRef?.current;
     if (!scroll || !inputAnchorRef.current) return;
-    const handle = findNodeHandle(scroll);
-    if (handle == null) return;
+    // The New Architecture (Fabric) requires measureLayout's "relativeTo"
+    // target to be a ref to a NATIVE component. Passing a findNodeHandle()
+    // number logs "ref.measureLayout must be called with a ref to a native
+    // component" and silently no-ops (the input never scrolls into view).
+    // ScrollView.getNativeScrollRef() returns the underlying native scroll
+    // view instance, which is the correct target on both architectures.
+    const relativeTo =
+      typeof (scroll as any).getNativeScrollRef === "function"
+        ? (scroll as any).getNativeScrollRef()
+        : null;
+    if (!relativeTo) return;
+    // Delay one frame so layout settles after `setShowInput(true)`.
     setTimeout(() => {
       inputAnchorRef.current?.measureLayout(
-        handle,
+        relativeTo,
         (_x, y) => {
           scroll.scrollTo({ y: Math.max(0, y - 24), animated: true });
         },

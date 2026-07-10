@@ -242,7 +242,30 @@ export async function activateLicense(
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    throw new Error(`Activation failed (${res.status}): ${detail || res.statusText}`);
+    // Map to a user-friendly message. Never surface the raw status code or
+    // JSON body in the activation UI — it reads as
+    // `Activation failed (404): {"error":"Not found"}`. The raw detail is
+    // kept on the error object for logs/telemetry only.
+    let friendly: string;
+    if (res.status === 400) {
+      friendly = "That license key doesn't look right. Please check the format and try again.";
+    } else if (res.status === 401 || res.status === 403) {
+      friendly = "This license key can't be activated. Please contact support if this is unexpected.";
+    } else if (res.status === 404) {
+      friendly = "We couldn't find that license key. Double-check the key from your confirmation email.";
+    } else if (res.status === 409) {
+      friendly = "This license is already active on another device.";
+    } else if (res.status === 429) {
+      friendly = "Too many attempts. Please wait a minute and try again.";
+    } else if (res.status >= 500) {
+      friendly = "Activation is temporarily unavailable. Please try again in a little while.";
+    } else {
+      friendly = "We couldn't activate your license. Please try again.";
+    }
+    const err = new Error(friendly);
+    (err as any).detail = detail;
+    (err as any).status = res.status;
+    throw err;
   }
   const payload = (await res.json()) as {
     tier: LicenseTier;
