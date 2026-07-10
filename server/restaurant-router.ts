@@ -237,6 +237,22 @@ export const restaurantRouter = router({
       return restaurants.slice(0, limit);
     }),
 
+  /**
+   * Fetch a single restaurant by id.
+   *
+   * NOTE: The full lookup is served by the production Worker from the D1
+   * restaurant_cache (id is the PRIMARY KEY). This local-dev stub returns
+   * null; the client falls back to its in-memory search cache in dev. The
+   * explicit return type keeps the client's inferred shape usable against
+   * the real Worker data.
+   */
+  getById: publicProcedure
+    .input(z.object({ id: z.string().min(1).max(256) }))
+    .query(async ({ input }): Promise<{ restaurant: Record<string, any> | null }> => {
+      console.log(`[Router] getById ${input.id} (full lookup requires production Worker)`);
+      return { restaurant: null };
+    }),
+
   // =========================================================================
   // 🧠 AI-POWERED SEMANTIC SEARCH (Stubs for local dev - use Worker in prod)
   // =========================================================================

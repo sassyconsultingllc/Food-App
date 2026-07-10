@@ -29,6 +29,7 @@ import { useResponsive } from "@/hooks/use-responsive";
 import { useSemanticSearch, useVectorStats } from "@/hooks/use-semantic-search";
 import { useTasteProfile } from "@/hooks/use-taste-profile";
 import { Restaurant, DIETARY_OPTIONS, DietaryOption } from "@/types/restaurant";
+import { transformServerRestaurant } from "@/utils/restaurant-transform";
 import { isOpenNow } from "@/utils/hours-utils";
 import { useAppSounds } from "@/hooks/use-app-sounds";
 import { useSoundSettings } from "@/hooks/use-sound-settings";
@@ -243,8 +244,14 @@ export default function BrowseScreen() {
     if (searchMode !== 'ai' || aiResults.length === 0) return [];
 
     return aiResults.map(result => {
-      // Try to get full restaurant data from local cache
-      const localData = result.restaurant || restaurantMap.get(result.id);
+      // Try to get full restaurant data from local cache. result.restaurant is
+      // the RAW server/D1 record (its photos are relative /api/photo?ref= paths
+      // that don't load in RN) — run it through the same transform as search
+      // results so the card thumbnail resolves. Fall back to the already-
+      // transformed local cache entry, then to a synthetic card from metadata.
+      const localData = result.restaurant
+        ? transformServerRestaurant(result.restaurant)
+        : restaurantMap.get(result.id);
       return {
         ...result,
         restaurant: localData || {
@@ -754,6 +761,16 @@ export default function BrowseScreen() {
                 <ActivityIndicator size="large" color={AppColors.copper} />
                 <ThemedText style={[styles.emptyText, { color: colors.textSecondary }]}>
                   Searching with AI...
+                </ThemedText>
+              </>
+            ) : restaurantsLoading && searchMode === 'traditional' ? (
+              // Cold-cache load or the first auto-scrape for a saved ZIP —
+              // show a loading state instead of the "No restaurants found"
+              // negative empty state, which was previously the default here.
+              <>
+                <ActivityIndicator size="large" color={colors.accent} />
+                <ThemedText style={[styles.emptyText, { color: colors.textSecondary }]}>
+                  Finding restaurants near you…
                 </ThemedText>
               </>
             ) : (

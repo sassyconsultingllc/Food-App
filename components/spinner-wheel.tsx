@@ -214,7 +214,10 @@ export function SpinnerWheel({
           ) : (
             <>
               <IconSymbol name="fork.knife" size={48} color={AppColors.slateGray} />
-              <ThemedText style={styles.emptyText}>Add restaurants to spin!</ThemedText>
+              <ThemedText style={styles.emptyText}>No restaurants to spin yet</ThemedText>
+              <ThemedText style={styles.emptySubtext}>
+                Set your location or search an area to load nearby spots.
+              </ThemedText>
             </>
           )}
         </View>

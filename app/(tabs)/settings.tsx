@@ -422,7 +422,7 @@ export default function SettingsScreen() {
                 "How to Use Foodie Finder",
                 "1. Browse or search for restaurants near you\n\n" +
                 "2. Tap the shuffle button for a random pick\n\n" +
-                "3. Swipe through results for menus, ratings, and specials\n\n" +
+                "3. Tap any restaurant to see its menu, ratings, and specials\n\n" +
                 "4. Save favorites with the fork & knife icon\n\n" +
                 "5. Set your default location and radius in Settings",
                 [{ text: "Got it!" }]

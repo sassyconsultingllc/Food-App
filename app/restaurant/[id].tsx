@@ -7,7 +7,7 @@ import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import * as Haptics from "expo-haptics";
 import * as Linking from "expo-linking";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -38,6 +38,8 @@ import { useLicense } from "@/hooks/use-license";
 import { FREE_TIER_LIMITS } from "@/lib/license";
 import { shareRestaurant } from "@/utils/share-utils";
 import { formatDisplayAddress, formatMapsAddress } from "@/utils/address-utils";
+import { trpc } from "@/lib/trpc";
+import { transformServerRestaurant } from "@/utils/restaurant-transform";
 
 /**
  * Validate a URL before handing it to Linking.openURL. Restaurant data flows
@@ -98,7 +100,52 @@ export default function RestaurantDetailScreen() {
   const { findSimilar, results: similarResults, loading: similarLoading, clear: clearSimilar } = useSimilarRestaurants();
   const { available: aiAvailable } = useVectorStats();
 
-  const restaurant = getRestaurantById(id);
+  // Resolve the restaurant. Local search results + favorites snapshot first;
+  // if it's not held locally (a "More Like This" / recommendation card, a
+  // favorite opened in a different search area, or a shared deep link), fall
+  // back to the server by id. Without this fallback these all rendered
+  // "Restaurant not found" even though the backend has the record.
+  const localRestaurant = getRestaurantById(id);
+  const serverEnabled = !!id && !localRestaurant && !dataLoading;
+  const serverQuery = trpc.restaurant.getById.useQuery(
+    { id: id || "" },
+    {
+      enabled: serverEnabled,
+      staleTime: 5 * 60 * 1000,
+      retry: 1,
+    }
+  );
+  const serverRestaurant = useMemo(
+    () =>
+      serverQuery.data?.restaurant
+        ? transformServerRestaurant(serverQuery.data.restaurant)
+        : undefined,
+    [serverQuery.data]
+  );
+  const restaurant = localRestaurant || serverRestaurant;
+
+  // True while the server fallback is enabled but hasn't produced data or a
+  // terminal error yet — used to hold the "not found" screen back until the
+  // fallback settles. Keying off `serverEnabled && data===undefined` (rather
+  // than isFetching) also covers the first render frame after the query
+  // switches on but before it starts fetching, which otherwise flashed the
+  // "not found" screen for a frame during the local→remote handoff.
+  const resolvingRemote =
+    serverEnabled && serverQuery.data === undefined && !serverQuery.isError;
+
+  // Pre-hydrate the "More Like This" cards once per results change instead of
+  // re-running transformServerRestaurant for every card on every re-render
+  // (e.g. each time the notes modal toggles).
+  const hydratedSimilar = useMemo(
+    () =>
+      similarResults.map((result) => ({
+        result,
+        restaurant: result.restaurant
+          ? transformServerRestaurant(result.restaurant)
+          : getRestaurantById(result.id),
+      })),
+    [similarResults, getRestaurantById]
+  );
 
   // Classify photos into food/menu buckets via Vision OCR (cached)
   const {
@@ -142,8 +189,11 @@ export default function RestaurantDetailScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, restaurantReady, aiAvailable, hasSimilarAccess]);
 
-  // LOADING STATE: Don't show "not found" while data is still loading
-  if (!restaurant && dataLoading) {
+  // LOADING STATE: Don't show "not found" while data is still loading —
+  // the route param may not be hydrated yet (cold deep-link), the local cache
+  // is still hydrating, OR the server-by-id fallback is still in flight for a
+  // restaurant we don't hold locally.
+  if (!restaurant && (!id || dataLoading || resolvingRemote)) {
     return (
       <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
         <Stack.Screen options={{ headerShown: false }} />
@@ -157,13 +207,20 @@ export default function RestaurantDetailScreen() {
     );
   }
 
-  // Only show "not found" AFTER loading is complete and restaurant genuinely doesn't exist
+  // Only show "not found" AFTER both the local cache and the server fallback
+  // have settled and the restaurant genuinely doesn't exist anywhere.
   if (!restaurant) {
     return (
       <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.errorContainer}>
+          <IconSymbol name="fork.knife" size={56} color={colors.border} />
           <ThemedText type="subtitle">Restaurant not found</ThemedText>
+          <ThemedText
+            style={{ color: colors.textSecondary, textAlign: "center", paddingHorizontal: Spacing.xl, lineHeight: 22 }}
+          >
+            We couldn&apos;t load this restaurant. It may no longer be available, or the details expired from our cache — try searching for it again.
+          </ThemedText>
           <Pressable
             onPress={() => router.back()}
             style={[styles.backButton, { backgroundColor: colors.accent }]}
@@ -368,7 +425,7 @@ export default function RestaurantDetailScreen() {
           
           <Pressable
             onPress={handleAddressPress}
-            style={styles.contactRow}
+            style={[styles.contactRow, { borderBottomColor: colors.border }]}
             accessibilityRole="button"
             accessibilityLabel="Open address in Maps"
             accessibilityHint="Opens the restaurant address in your Maps app"
@@ -385,7 +442,7 @@ export default function RestaurantDetailScreen() {
           {restaurant.phone && (
             <Pressable
               onPress={handlePhonePress}
-              style={styles.contactRow}
+              style={[styles.contactRow, { borderBottomColor: colors.border }]}
               accessibilityRole="button"
               accessibilityLabel={`Call ${restaurant.name}`}
               accessibilityHint="Opens your phone dialer with the restaurant's number"
@@ -399,7 +456,7 @@ export default function RestaurantDetailScreen() {
           {restaurant.website && (
             <Pressable
               onPress={handleWebsitePress}
-              style={styles.contactRow}
+              style={[styles.contactRow, { borderBottomColor: colors.border }]}
               accessibilityRole="link"
               accessibilityLabel="Open restaurant website"
             >
@@ -414,7 +471,7 @@ export default function RestaurantDetailScreen() {
           {restaurant.yelpUrl && (
             <Pressable
               onPress={() => safeOpenUrl(restaurant.yelpUrl)}
-              style={styles.contactRow}
+              style={[styles.contactRow, { borderBottomColor: colors.border }]}
               accessibilityRole="link"
               accessibilityLabel="View restaurant on Yelp"
             >
@@ -429,7 +486,7 @@ export default function RestaurantDetailScreen() {
           {restaurant.googleMapsUrl && (
             <Pressable
               onPress={() => safeOpenUrl(restaurant.googleMapsUrl)}
-              style={styles.contactRow}
+              style={[styles.contactRow, { borderBottomColor: colors.border }]}
               accessibilityRole="link"
               accessibilityLabel="View restaurant on Google Maps"
             >
@@ -666,8 +723,12 @@ export default function RestaurantDetailScreen() {
               </View>
             ) : (
               <View style={styles.similarList}>
-                {similarResults.map((result, idx) => {
-                  const similarRestaurant = result.restaurant || getRestaurantById(result.id);
+                {hydratedSimilar.map(({ result, restaurant: similarRestaurant }, idx) => {
+                  // similarRestaurant was hydrated above from the RAW server/D1
+                  // record (its photos are relative /api/photo?ref=… paths that
+                  // don't load in RN) via the same transform as search results,
+                  // so the thumbnail resolves and the card matches the rest of
+                  // the UI.
                   if (!similarRestaurant) return null;
 
                   return (
@@ -735,7 +796,7 @@ export default function RestaurantDetailScreen() {
                 onPress={() => handlePhonePress()}
                 accessibilityRole="button"
                 accessibilityLabel="Call to order"
-                style={styles.orderOption}
+                style={[styles.orderOption, { borderBottomColor: colors.border }]}
               >
                 <IconSymbol name="phone.fill" size={20} color={colors.accent} />
                 <ThemedText style={styles.orderOptionText}>Call to Order</ThemedText>
@@ -748,7 +809,7 @@ export default function RestaurantDetailScreen() {
                 onPress={() => safeOpenUrl(restaurant.website)}
                 accessibilityRole="link"
                 accessibilityLabel="Order direct from restaurant website"
-                style={styles.orderOption}
+                style={[styles.orderOption, { borderBottomColor: colors.border }]}
               >
                 <IconSymbol name="globe" size={20} color={colors.accent} />
                 <ThemedText style={styles.orderOptionText}>Order Direct</ThemedText>
@@ -761,7 +822,7 @@ export default function RestaurantDetailScreen() {
                 onPress={() => safeOpenUrl(restaurant.doordashUrl)}
                 accessibilityRole="link"
                 accessibilityLabel="Find on DoorDash"
-                style={styles.orderOption}
+                style={[styles.orderOption, { borderBottomColor: colors.border }]}
               >
                 <IconSymbol name="car.fill" size={20} color="#FF3008" />
                 <ThemedText style={styles.orderOptionText}>Find on DoorDash</ThemedText>
@@ -774,7 +835,7 @@ export default function RestaurantDetailScreen() {
                 onPress={() => safeOpenUrl(restaurant.ubereatsUrl)}
                 accessibilityRole="link"
                 accessibilityLabel="Find on Uber Eats"
-                style={styles.orderOption}
+                style={[styles.orderOption, { borderBottomColor: colors.border }]}
               >
                 <IconSymbol name="car.fill" size={20} color="#06C167" />
                 <ThemedText style={styles.orderOptionText}>Find on Uber Eats</ThemedText>
@@ -787,7 +848,7 @@ export default function RestaurantDetailScreen() {
                 onPress={() => safeOpenUrl(restaurant.grubhubUrl)}
                 accessibilityRole="link"
                 accessibilityLabel="Find on Grubhub"
-                style={styles.orderOption}
+                style={[styles.orderOption, { borderBottomColor: colors.border }]}
               >
                 <IconSymbol name="car.fill" size={20} color="#F63440" />
                 <ThemedText style={styles.orderOptionText}>Find on Grubhub</ThemedText>

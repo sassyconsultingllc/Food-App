@@ -231,19 +231,38 @@ export const appRouter = router({
 
         if (db && !forceRefresh) {
           const isCached = await isPostalCodeCached(db, cacheKey);
-          
+
           if (isCached) {
-            console.log(`[Router] Serving ${cacheKey} from cache`);
             let cached = await getCachedRestaurants(db, cacheKey);
-            
-            if (cuisineType) {
-              cached = cached.filter((r: any) =>
-                r.cuisineType?.toLowerCase().includes(cuisineType.toLowerCase()) ||
-                r.categories?.some((c: string) => c.toLowerCase().includes(cuisineType.toLowerCase()))
-              );
+
+            // Self-heal a fully-"stomped" cache. restaurant_cache.id is a
+            // GLOBAL primary key written with INSERT OR REPLACE, so when the
+            // same restaurant is cached under an overlapping cache_key its row
+            // is re-keyed to the newer key and disappears from this one — in
+            // the worst case leaving 0 rows for a key isPostalCodeCached()
+            // still reports as populated. cacheRestaurants() never writes a
+            // postal_cache row for an empty scrape, so isCached=true implies
+            // ≥1 restaurant was stored; therefore length===0 unambiguously
+            // means stomping, and re-scraping is strictly better than serving
+            // an empty list. We deliberately do NOT re-scrape on a merely
+            // *smaller-than-recorded* count: restaurant_count is the pre-dedup
+            // scrape length while rows are inserted deduped, so a partial
+            // count is expected and comparing against it would defeat the
+            // cache on every read and ping-pong between overlapping keys.
+            // (Proper fix: composite PK (cache_key, id) via migration — tracked
+            // as a follow-up; see cache.ts cacheRestaurants notes.)
+            if (cached.length > 0) {
+              console.log(`[Router] Serving ${cacheKey} from cache`);
+              if (cuisineType) {
+                cached = cached.filter((r: any) =>
+                  r.cuisineType?.toLowerCase().includes(cuisineType.toLowerCase()) ||
+                  r.categories?.some((c: string) => c.toLowerCase().includes(cuisineType.toLowerCase()))
+                );
+              }
+
+              return cached.slice(0, limit);
             }
-            
-            return cached.slice(0, limit);
+            console.warn(`[Router] Cache for ${cacheKey} is empty despite a live postal_cache row (stomped); re-scraping`);
           }
         }
         
@@ -325,6 +344,40 @@ export const appRouter = router({
         }
         
         return filtered.slice(0, limit);
+      }),
+
+    /**
+     * Fetch a single restaurant by its global id from the D1 cache.
+     *
+     * The mobile app resolves restaurants for the detail screen from its
+     * in-memory ZIP-search results. Anything reached by id from another
+     * surface — a "More Like This" / recommendation card, a favorite opened
+     * in a different search area, a shared deep link — may not be in that
+     * list, which previously rendered "Restaurant not found". This lets the
+     * client fall back to the same restaurant_cache row the semantic-search
+     * procedures hydrate from (id is the PRIMARY KEY).
+     */
+    getById: publicProcedure
+      .input(z.object({ id: z.string().min(1).max(256) }))
+      .query(async ({ input, ctx }): Promise<{ restaurant: Record<string, any> | null }> => {
+        const db = ctx.env.DB;
+        if (!db) return { restaurant: null };
+        try {
+          await ensureCacheTables(db);
+          const row = await db
+            .prepare(`SELECT data FROM restaurant_cache WHERE id = ? LIMIT 1`)
+            .bind(input.id)
+            .first<{ data: string }>();
+          if (!row) return { restaurant: null };
+          try {
+            return { restaurant: JSON.parse(row.data) };
+          } catch {
+            return { restaurant: null };
+          }
+        } catch (e) {
+          console.error("[Router] getById error:", e);
+          return { restaurant: null };
+        }
       }),
 
     // =========================================================================
@@ -445,10 +498,13 @@ export const appRouter = router({
             }
             
             return {
-              results: similarResults.map(sr => ({
-                ...sr,
-                restaurant: dataMap.get(sr.id) || null,
-              })),
+              // Drop results whose D1 cache row was evicted. The Vectorize
+              // index is permanent but restaurant_cache expires after 24h, so
+              // a stale vector would otherwise enrich to null and render a
+              // blank, un-tappable "More Like This" card.
+              results: similarResults
+                .map(sr => ({ ...sr, restaurant: dataMap.get(sr.id) || null }))
+                .filter(sr => sr.restaurant),
             };
           }
           
@@ -502,10 +558,11 @@ export const appRouter = router({
             }
             
             return {
-              results: recommendations.map(rec => ({
-                ...rec,
-                restaurant: dataMap.get(rec.id) || null,
-              })),
+              // Same eviction guard as `similar`: don't return recommendation
+              // cards whose cache row expired out from under the vector.
+              results: recommendations
+                .map(rec => ({ ...rec, restaurant: dataMap.get(rec.id) || null }))
+                .filter(rec => rec.restaurant),
             };
           }
           

@@ -34,6 +34,13 @@ export interface SimilarRestaurantOptions {
 }
 
 /**
+ * Cloudflare Vectorize caps `topK` at 20 when metadata is fully returned
+ * (returnMetadata: true / 'all'); exceeding it makes .query() throw. Every
+ * query in this module returns metadata, so all of them must clamp to this.
+ */
+const VECTORIZE_TOPK_CAP = 20;
+
+/**
  * Semantic search for restaurants using natural language
  * 
  * Examples:
@@ -60,9 +67,10 @@ export async function semanticSearch(
     if (filter?.country) vectorizeFilter.country = filter.country;
     if (filter?.priceRange) vectorizeFilter.priceRange = filter.priceRange;
     
-    // Query Vectorize
+    // Query Vectorize. Clamp to the metadata topK cap so a caller passing a
+    // large topK (the route allows up to 50) can't make .query() throw.
     const results = await vectorize.query(queryVector, {
-      topK,
+      topK: Math.min(VECTORIZE_TOPK_CAP, topK),
       filter: Object.keys(vectorizeFilter).length > 0 ? vectorizeFilter : undefined,
       returnMetadata: true,
     });
@@ -100,10 +108,16 @@ export async function findSimilar(
     }
     
     const sourceVector = vectorResult[0].values;
-    
-    // Query for similar, requesting extra to account for exclusions
+
+    // Query for similar, requesting extra to account for exclusions.
+    // Vectorize caps topK at 20 when returnMetadata returns all fields;
+    // passing a larger topK makes .query() THROW, which the caller turns into
+    // an empty result and the UI hides the whole "More Like This" section.
+    // Engaged users (long favorites list -> long excludeIds) hit this. Clamp
+    // the over-fetch to the cap — the exclude filter + slice(0, topK) below
+    // still returns the right results, just from a bounded candidate set.
     const results = await vectorize.query(sourceVector, {
-      topK: topK + excludeIds.length + 1, // +1 for the source itself
+      topK: Math.min(VECTORIZE_TOPK_CAP, topK + excludeIds.length + 1), // +1 for the source itself
       returnMetadata: true,
     });
     
@@ -253,9 +267,11 @@ export async function recommendFromFavorites(
       avgVector[i] /= validCount;
     }
     
-    // Query with averaged vector
+    // Query with averaged vector. Same Vectorize topK cap as findSimilar —
+    // favoriteIds + excludeIds can easily push the raw sum past 20 and make
+    // .query() throw, which would silently drop all recommendations.
     const results = await vectorize.query(avgVector, {
-      topK: topK + favoriteIds.length + excludeIds.length,
+      topK: Math.min(VECTORIZE_TOPK_CAP, topK + favoriteIds.length + excludeIds.length),
       returnMetadata: true,
     });
     

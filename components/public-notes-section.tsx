@@ -456,12 +456,17 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: BorderRadius.sm,
     borderWidth: 1,
+    minHeight: 44,
+    justifyContent: "center",
+    alignItems: "center",
   },
   submitButton: {
     paddingHorizontal: Spacing.lg,
     paddingVertical: 8,
     borderRadius: BorderRadius.sm,
     minWidth: 60,
+    minHeight: 44,
+    justifyContent: "center",
     alignItems: "center",
   },
   submitText: {

@@ -269,6 +269,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: Spacing.sm,
     borderRadius: BorderRadius.sm,
+    minHeight: 44,
   },
   tabText: {
     fontSize: 12,

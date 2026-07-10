@@ -5,7 +5,7 @@
 
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
 import { ThemedText } from "@/components/themed-text";
@@ -43,6 +43,19 @@ export function RestaurantCard({
     router.push(`/restaurant/${restaurant.id}` as any);
   };
 
+  // Thumbnail source. transformServerRestaurant never sets `imageUrl` (that's
+  // Culver's-only), so without the photos[0] fallback every normal card
+  // rendered the placeholder icon. photos[0] is already absolutized in the
+  // transform. Fall back to the placeholder if the image fails to load.
+  const [imageFailed, setImageFailed] = useState(false);
+  const imageUri = restaurant.imageUrl || restaurant.photos?.[0];
+  // Reset the failure flag when the source changes so a transient load error
+  // (flaky network, momentary /api/photo rate-limit) doesn't pin this card —
+  // or a recycled FlatList instance — to the placeholder forever.
+  useEffect(() => {
+    setImageFailed(false);
+  }, [imageUri]);
+
   const openStatus = restaurant.hours
     ? getOpenStatus(restaurant.hours)
     : { isOpen: false, statusText: "Hours unknown", todayHours: undefined };
@@ -65,13 +78,14 @@ export function RestaurantCard({
       ]}
     >
       <View style={styles.imageContainer}>
-        {restaurant.imageUrl ? (
+        {imageUri && !imageFailed ? (
           <Image
-            source={{ uri: restaurant.imageUrl }}
+            source={{ uri: imageUri }}
             style={styles.image}
             contentFit="cover"
             transition={200}
             cachePolicy="memory-disk"
+            onError={() => setImageFailed(true)}
           />
         ) : (
           <View style={[styles.imagePlaceholder, { backgroundColor: colors.border }]}>

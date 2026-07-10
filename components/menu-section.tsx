@@ -553,6 +553,13 @@ export function MenuSection({
             pagingEnabled
             showsHorizontalScrollIndicator={false}
             initialScrollIndex={fullscreenIndex}
+            // Keep the "X of Y" counter in sync as the user pages — without
+            // this handler fullscreenIndex stayed frozen at whatever page was
+            // opened and the counter never moved.
+            onMomentumScrollEnd={(e) => {
+              const page = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+              setFullscreenIndex(Math.max(0, Math.min(page, allMenuPhotos.length - 1)));
+            }}
             getItemLayout={(_, index) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index })}
             keyExtractor={(item, index) =>
               typeof item === "string" && item.length > 0 ? `fs-${item}` : `fs-menu-${index}`

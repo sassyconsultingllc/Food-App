@@ -345,6 +345,16 @@ app.post("/api/vision/classify", async (c) => {
     }
     return false;
   }
+  // The worker's own hostname. Restaurant photos reach the client as
+  // `${apiHost}/api/photo?ref=...` proxy URLs (the raw googleusercontent URL
+  // is never exposed), so the Vision classifier's inputs are same-origin
+  // proxy URLs — NOT the CDN hosts in PHOTO_HOST_ALLOWLIST. Previously they
+  // were all filtered out, `urls` came back empty, the endpoint 400'd, and
+  // every photo defaulted to "food" → the Menu section never showed a single
+  // Google-sourced menu photo. Accepting the same-origin proxy path fixes it.
+  const selfHost = (() => {
+    try { return new URL(c.req.url).hostname.toLowerCase(); } catch { return ""; }
+  })();
   function isAllowedPhotoUrl(u: string): boolean {
     let parsed: URL;
     try {
@@ -355,6 +365,13 @@ app.post("/api/vision/classify", async (c) => {
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
     const host = parsed.hostname.toLowerCase();
     if (isPrivateOrLoopbackHost(host)) return false;
+    // Same-origin photo proxy — host-pinned + path-restricted to /api/photo so
+    // this doesn't open SSRF to other worker routes. Google Vision fetches the
+    // proxy URL, which re-proxies to the real (allowlisted) Google CDN.
+    // (Future hardening: fetch the bytes here and send Vision image.content
+    // base64 instead of image.source.imageUri, to avoid Vision's egress IPs
+    // tripping the /api/photo per-IP rate limit under bursty classification.)
+    if (selfHost && host === selfHost && parsed.pathname === "/api/photo") return true;
     // Exact match or subdomain match against the allowlist.
     return PHOTO_HOST_ALLOWLIST.some(
       (allowed) => host === allowed || host.endsWith(`.${allowed}`)

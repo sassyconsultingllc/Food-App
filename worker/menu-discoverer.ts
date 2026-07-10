@@ -481,9 +481,26 @@ async function probeMenuUrl(
   if (res.isPdf) {
     return { menuUrl: res.url, isPdf: true, images: [], source };
   }
+  // res.url is the FINAL url after redirects; isPlausibleMenuTarget here also
+  // catches sites that 302 /menu -> / (their homepage isn't a menu).
   if (!isPlausibleMenuTarget(res.url)) return null;
-  if (!looksLikeMenu(res.text)) return null;
   const images = extractImages(res.text, res.url);
+  // Accept when the page reads like a menu (prices / many list items) OR when
+  // the final URL path itself contains "menu" AND we pulled real menu images.
+  // Many small restaurants publish image-only menu pages — a couple of large
+  // JPGs with almost no on-page text — which looksLikeMenu() rejected even
+  // though extractImages() (logos/icons/banners already filtered) found the
+  // actual menu photos. This recovers those without loosening the homepage
+  // guard above.
+  const finalPath = (() => {
+    try { return new URL(res.url).pathname.toLowerCase(); } catch { return ""; }
+  })();
+  // Only treat this as an image-only menu when a path SEGMENT is genuinely a
+  // menu (menu, menus, our-menu, food-menu, dinner-menu, menu.pdf, /menu/…).
+  // A bare substring test matched /menu-gallery, /menuitems-landing, etc. and
+  // would surface their hero/promo JPGs as the "menu".
+  const pathIsMenu = /(^|\/)(menus?|(?:food|dinner|lunch|breakfast|drink|kids|our|the)-menu)(\/|$|\.[a-z0-9]+$)/.test(finalPath);
+  if (!looksLikeMenu(res.text) && !(pathIsMenu && images.length > 0)) return null;
   return { menuUrl: res.url, isPdf: false, images, source };
 }
 
@@ -530,12 +547,50 @@ export async function discoverMenu(websiteUrl: string): Promise<MenuDiscoveryRes
 }
 
 /**
- * Helper for the route handler — extracts the cache key (hostname) from
- * a website URL, normalised to drop "www." so franchises hit the same
- * cache row.
+ * Helper for the route handler — derives the discovery cache key from a
+ * website URL.
+ *
+ * Previously this returned the bare hostname, which collapsed every
+ * restaurant on a shared host onto one cache row: facebook.com/RestaurantA
+ * and facebook.com/RestaurantB (also instagram.com/*, *.square.site,
+ * linktr.ee, order.online, toasttab.com, …) all keyed on the plain host, so
+ * the first restaurant discovered "won" and every later one on that host was
+ * served — and had persisted into its menu_photos — the WRONG restaurant's
+ * menu, permanently and cross-user.
+ *
+ * The key now includes the path (and a NORMALISED query — some platforms
+ * disambiguate the store via `?store=123`), dropping "www.", the fragment, a
+ * trailing slash, and volatile tracking/session params (utm_*, fbclid, gclid,
+ * …). Query params are also sorted so order doesn't matter. Without the
+ * tracking-param strip, a "website" that is a social/share link would mint a
+ * fresh menu_discovery_cache row on every visit (no cache hit, unbounded table
+ * growth). Genuine franchises that share a full menu URL still share the cache
+ * row (a bare homepage like https://www.dominos.com/ still keys on just
+ * "dominos.com"); only per-restaurant paths get their own row. Correct by
+ * default — the only cost is a slightly lower cache-hit rate for chains that
+ * vary their path, an acceptable trade for not showing the wrong menu.
  */
+const TRACKING_QUERY_PARAMS = new Set([
+  "fbclid", "gclid", "gclsrc", "dclid", "msclkid", "yclid", "wickedid",
+  "mc_cid", "mc_eid", "igshid", "ref", "ref_src", "_ga", "_gl", "s_kwcid",
+]);
+
 export function cacheKeyForWebsite(websiteUrl: string): string | null {
   const u = safeParseUrl(websiteUrl);
   if (!u) return null;
-  return u.hostname.toLowerCase().replace(/^www\./, "");
+  const host = u.hostname.toLowerCase().replace(/^www\./, "");
+  const path = u.pathname.toLowerCase().replace(/\/+$/, ""); // drop trailing slash(es)
+
+  // Keep only meaningful query params; sort for order-independence.
+  const kept = new URLSearchParams();
+  const entries = Array.from(new URLSearchParams(u.search).entries())
+    .filter(([k]) => {
+      const key = k.toLowerCase();
+      return !key.startsWith("utm_") && !TRACKING_QUERY_PARAMS.has(key);
+    })
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  for (const [k, v] of entries) kept.append(k, v);
+  const qs = kept.toString();
+
+  return `${host}${path}${qs ? `?${qs}` : ""}`;
 }
