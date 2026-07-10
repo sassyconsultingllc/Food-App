@@ -468,11 +468,51 @@ const NON_FOOD_CATEGORY_TOKENS = [
   'bank', 'atm', 'hair salon', 'beauty salon', 'nail salon', 'barber', 'spa',
   'gym', 'fitness', 'school', 'university', 'church', 'government', 'library',
   'gallery', 'museum', 'storage', 'real estate',
+  // Added 2026-07-10 (mirrors worker/scraper.ts): malls, members' clubs, and
+  // attractions were leaking into results (e.g. The Grove / Soho House).
+  'shopping mall', 'shopping_mall', 'shopping center', 'shopping centre',
+  'outlet mall', 'tourist attraction', 'tourist_attraction', 'landmark',
+  'organization', 'organisation', 'societ', 'stadium', 'arena',
+  'convention center', 'convention centre', 'amusement park', 'theme park',
+  'movie theater', 'movie theatre', 'cinema', 'casino', 'night club',
+  'nightclub', 'zoo', 'aquarium', 'park & ride',
 ];
 
+// Ultra-generic container tokens every provider attaches to real restaurants
+// too — only mark a place non-food when it also lacks any food signal.
+const GENERIC_PLACE_TOKENS = ['point of interest', 'point_of_interest', 'establishment'];
+
+const FOOD_SIGNAL_TOKENS = [
+  'restaurant', 'cafe', 'café', 'coffee', 'bakery', 'bakeri', 'pizzeria',
+  'pizza', 'bar & grill', 'bar and grill', 'gastropub', 'brewpub', 'brewery',
+  'taproom', 'pub', 'tavern', 'grill', 'diner', 'bistro', 'brasserie',
+  'trattoria', 'ristorante', 'steakhouse', 'bbq', 'barbecue', 'barbeque',
+  'deli', 'delicatessen', 'sandwich', 'burger', 'sushi', 'ramen', 'noodle',
+  'taco', 'taqueria', 'cantina', 'kitchen', 'eatery', 'buffet', 'food',
+  'meal takeaway', 'meal delivery', 'ice cream', 'gelato', 'dessert', 'donut',
+  'doughnut', 'bagel', 'creperie', 'patisserie', 'juice', 'smoothie',
+  'teahouse', 'dining', 'snack', 'seafood', 'chophouse', 'wings', 'noodles',
+  'italian', 'mexican', 'chinese', 'japanese', 'thai', 'indian', 'korean',
+  'vietnamese', 'mediterranean', 'greek', 'french', 'american', 'vegan',
+  'vegetarian', 'asian', 'caribbean', 'latin', 'tapas', 'lebanese', 'turkish',
+  'middle eastern', 'halal', 'kosher', 'cajun', 'creole', 'peruvian', 'cuban',
+  'brazilian', 'ethiopian', 'soul food', 'spanish', 'filipino', 'hawaiian',
+];
+
+function hasFoodSignal(haystack: string[]): boolean {
+  return haystack.some((c) => FOOD_SIGNAL_TOKENS.some((tok) => c.includes(tok)));
+}
+
 function isNonFoodPlace(categories: string[] = [], cuisineType?: string): boolean {
-  const haystack = [...categories, cuisineType || ''].map((c) => c.toLowerCase());
-  return haystack.some((c) => NON_FOOD_CATEGORY_TOKENS.some((tok) => c.includes(tok)));
+  const haystack = [...categories, cuisineType || ''].map((c) => (c || '').toLowerCase());
+  if (haystack.some((c) => NON_FOOD_CATEGORY_TOKENS.some((tok) => c.includes(tok)))) {
+    return true;
+  }
+  const genericOnly = haystack.some((c) => GENERIC_PLACE_TOKENS.some((tok) => c.includes(tok)));
+  if (genericOnly && !hasFoodSignal(haystack)) {
+    return true;
+  }
+  return false;
 }
 
 // Mirrors worker/scraper.ts. Provider categories are unreliable for the

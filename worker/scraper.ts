@@ -802,11 +802,14 @@ function formatGoogleType(t?: string): string | undefined {
 }
 
 // Unambiguous non-food category tokens. A real restaurant's category list
-// never contains these, so any record carrying one is contamination — most
-// often from a provider's fuzzy text match (see fetchHERE) — and gets dropped
-// before it can reach the spinner reel. Defense-in-depth: even after the HERE
-// query was category-constrained, cached records and other providers can still
-// surface a non-food place, and this catches them at merge time.
+// never contains these — the ENTITY they describe (a mall, a members' club, a
+// stadium) is not a dining venue, and any restaurant it contains carries its
+// own 'restaurant'/cuisine category from the provider. Any record carrying one
+// of these is contamination — most often from a provider's fuzzy text match
+// (see fetchHERE) — and gets dropped before it can reach the spinner reel.
+// Defense-in-depth: even after the HERE query was category-constrained, cached
+// records and other providers can still surface a non-food place, and this
+// catches them at merge time.
 const NON_FOOD_CATEGORY_TOKENS = [
   'hardware', 'house & garden', 'home & garden', 'home improvement',
   'furniture', 'clothing', 'apparel', 'shoe', 'jewelry', 'department store',
@@ -816,11 +819,64 @@ const NON_FOOD_CATEGORY_TOKENS = [
   'bank', 'atm', 'hair salon', 'beauty salon', 'nail salon', 'barber', 'spa',
   'gym', 'fitness', 'school', 'university', 'church', 'government', 'library',
   'gallery', 'museum', 'storage', 'real estate',
+  // Added 2026-07-10: malls, members' clubs, and attractions were leaking into
+  // 90210 results — "The Grove" (Shopping Mall) and "Soho House West
+  // Hollywood" (Organizations And Societies) showed up in the spinner and
+  // Browse list. These entity types are never a restaurant; a restaurant
+  // inside them is separately tagged by the provider.
+  'shopping mall', 'shopping_mall', 'shopping center', 'shopping centre',
+  'outlet mall', 'tourist attraction', 'tourist_attraction', 'landmark',
+  'organization', 'organisation', 'societ', 'stadium', 'arena',
+  'convention center', 'convention centre', 'amusement park', 'theme park',
+  'movie theater', 'movie theatre', 'cinema', 'casino', 'night club',
+  'nightclub', 'zoo', 'aquarium', 'park & ride',
 ];
 
+// Ultra-generic "container" tokens that providers attach to EVERY place —
+// including real restaurants — so they can't trigger an unconditional drop.
+// They only mark a place as non-food when it also lacks any positive food
+// signal (i.e. Google returned nothing but point_of_interest/establishment).
+const GENERIC_PLACE_TOKENS = ['point of interest', 'point_of_interest', 'establishment'];
+
+// Positive food/dining signals. Used to keep a place that carries a generic
+// container token but is genuinely a dining venue, and to rescue a mall/hotel
+// entry that ALSO happens to be tagged as a restaurant (a food hall).
+const FOOD_SIGNAL_TOKENS = [
+  'restaurant', 'cafe', 'café', 'coffee', 'bakery', 'bakeri', 'pizzeria',
+  'pizza', 'bar & grill', 'bar and grill', 'gastropub', 'brewpub', 'brewery',
+  'taproom', 'pub', 'tavern', 'grill', 'diner', 'bistro', 'brasserie',
+  'trattoria', 'ristorante', 'steakhouse', 'bbq', 'barbecue', 'barbeque',
+  'deli', 'delicatessen', 'sandwich', 'burger', 'sushi', 'ramen', 'noodle',
+  'taco', 'taqueria', 'cantina', 'kitchen', 'eatery', 'buffet', 'food',
+  'meal takeaway', 'meal delivery', 'ice cream', 'gelato', 'dessert', 'donut',
+  'doughnut', 'bagel', 'creperie', 'patisserie', 'juice', 'smoothie',
+  'teahouse', 'dining', 'snack', 'seafood', 'chophouse', 'wings', 'noodles',
+  // cuisines only appear on food places
+  'italian', 'mexican', 'chinese', 'japanese', 'thai', 'indian', 'korean',
+  'vietnamese', 'mediterranean', 'greek', 'french', 'american', 'vegan',
+  'vegetarian', 'asian', 'caribbean', 'latin', 'tapas', 'lebanese', 'turkish',
+  'middle eastern', 'halal', 'kosher', 'cajun', 'creole', 'peruvian', 'cuban',
+  'brazilian', 'ethiopian', 'soul food', 'spanish', 'filipino', 'hawaiian',
+];
+
+function hasFoodSignal(haystack: string[]): boolean {
+  return haystack.some((c) => FOOD_SIGNAL_TOKENS.some((tok) => c.includes(tok)));
+}
+
 export function isNonFoodPlace(categories: string[] = [], cuisineType?: string): boolean {
-  const haystack = [...categories, cuisineType || ''].map((c) => c.toLowerCase());
-  return haystack.some((c) => NON_FOOD_CATEGORY_TOKENS.some((tok) => c.includes(tok)));
+  const haystack = [...categories, cuisineType || ''].map((c) => (c || '').toLowerCase());
+  // 1. Hard non-food entity types → always drop.
+  if (haystack.some((c) => NON_FOOD_CATEGORY_TOKENS.some((tok) => c.includes(tok)))) {
+    return true;
+  }
+  // 2. Only generic container types (point_of_interest / establishment) with no
+  //    positive food signal → drop. Real restaurants always carry a food
+  //    signal alongside these, so they are never caught here.
+  const genericOnly = haystack.some((c) => GENERIC_PLACE_TOKENS.some((tok) => c.includes(tok)));
+  if (genericOnly && !hasFoodSignal(haystack)) {
+    return true;
+  }
+  return false;
 }
 
 // Provider categories are unreliable for the user-facing cuisine label —
