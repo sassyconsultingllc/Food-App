@@ -123,12 +123,12 @@
     "prettier": "^3.8.1",
     "qrcode": "^1.5.4",
     "react-test-renderer": "^19.2.4",
-    "sharp": "^0.34.5",
+    "sharp": "^0.35.3",
     "tsx": "^4.21.0",
     "typescript": "~5.9.3",
     "vite": "^8.0.16",
     "vitest": "^4.0.18",
-    "wrangler": "^4.65.0"
+    "wrangler": "^4.114.0"
   },
   "overrides": {
     "js-yaml": ">=4.1.1",
