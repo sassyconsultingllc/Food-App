@@ -1,3 +1,8 @@
+<!--
+   Copyright (c) 2026 Shane Smith / Sassy Consulting LLC. All rights reserved.
+   Proprietary source. This notice is Copyright Management Information (17 U.S.C. 1202); removal or alteration prohibited.
+   CodeMark: SCLLC1-foodie_finder_v8-43IYVYHD2SXN
+-->
 # Paywall — Enforced Mode
 
 Foodie Finder now ships with the paywall **enforced** (flipped 2026-07-02).

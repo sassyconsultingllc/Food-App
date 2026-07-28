@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Shane Smith / Sassy Consulting LLC. All rights reserved.
+// Proprietary source. This notice is Copyright Management Information (17 U.S.C. 1202); removal or alteration prohibited.
+// CodeMark: SCLLC1-foodie_finder_v8-OP3SE73AYJT4
 /**
  * Backend integration test — 53578 (Sauk City/Prairie du Sac WI) → 90210 (Beverly Hills)
  *

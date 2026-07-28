@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Shane Smith / Sassy Consulting LLC. All rights reserved.
+// Proprietary source. This notice is Copyright Management Information (17 U.S.C. 1202); removal or alteration prohibited.
+// CodeMark: SCLLC1-foodie_finder_v8-W3LVD6LCI5NX
 // Offline assertion of the scraper data-quality fixes against the exact
 // cases from the 2026-06-15 screenshots. No network — pure-function checks.
 import { inferCuisine, isNonFoodPlace } from "../worker/scraper.ts";

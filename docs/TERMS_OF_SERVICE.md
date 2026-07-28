@@ -1,3 +1,8 @@
+<!--
+   Copyright (c) 2026 Shane Smith / Sassy Consulting LLC. All rights reserved.
+   Proprietary source. This notice is Copyright Management Information (17 U.S.C. 1202); removal or alteration prohibited.
+   CodeMark: SCLLC1-foodie_finder_v8-WM4XQE46B576
+-->
 # Terms of Service
 **Foodie Finder - Restaurant Discovery App**
 

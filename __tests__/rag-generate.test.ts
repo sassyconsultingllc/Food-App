@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Shane Smith / Sassy Consulting LLC. All rights reserved.
+// Proprietary source. This notice is Copyright Management Information (17 U.S.C. 1202); removal or alteration prohibited.
+// CodeMark: SCLLC1-foodie_finder_v8-N4Q26JQXEINL
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import * as llmModule from '../server/_core/llm';

@@ -1,3 +1,8 @@
+<!--
+   Copyright (c) 2026 Shane Smith / Sassy Consulting LLC. All rights reserved.
+   Proprietary source. This notice is Copyright Management Information (17 U.S.C. 1202); removal or alteration prohibited.
+   CodeMark: SCLLC1-foodie_finder_v8-YKBUVVCGQ2V2
+-->
 # Changelog
 
 All notable user-visible changes to Foodie Finder. Versions follow the
@@ -7,6 +12,14 @@ used on Google Play.
 The **Privacy Policy** linked from every release: <https://sassyconsultingllc.com/privacy/foodie-finder/>
 The **Terms of Service** linked from every release: <https://sassyconsultingllc.com/privacy/foodie-finder/terms>
 
+
+## 1.0.3 (vc14) - 2026-07-28
+
+- Location search keeps zip in sync and centers distances on the active area.
+- Scraper filters malls, clubs, and attractions from restaurant results.
+- UI: friendlier license activation errors and Fabric-safe community-tips auto-scroll.
+- App fixes for More-Like-This/menu resolution and audit polish.
+- Source files: standardized copyright/CodeMark headers across the repo.
 ## 1.0.2 (vc12) — pending rebuild
 
 - **Photo Picker migration (Play Store compliance):** removed the

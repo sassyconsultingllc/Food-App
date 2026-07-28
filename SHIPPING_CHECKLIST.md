@@ -1,3 +1,8 @@
+<!--
+   Copyright (c) 2026 Shane Smith / Sassy Consulting LLC. All rights reserved.
+   Proprietary source. This notice is Copyright Management Information (17 U.S.C. 1202); removal or alteration prohibited.
+   CodeMark: SCLLC1-foodie_finder_v8-YEVHT7VI5FVH
+-->
 # Foodie Finder - Shipping Checklist
 
 © 2025-2026 Sassy Consulting - A Veteran Owned Company

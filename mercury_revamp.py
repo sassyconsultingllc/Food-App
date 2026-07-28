@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Shane Smith / Sassy Consulting LLC. All rights reserved.
+# Proprietary source. This notice is Copyright Management Information (17 U.S.C. 1202); removal or alteration prohibited.
+# CodeMark: SCLLC1-foodie_finder_v8-C4GGAKYZH3WM
 """Send Foodie Finder UI surface to Inception Mercury-2 for a UI revamp pass.
 
 Sibling of mercury_audit.py. Where the audit script does strict bug-hunting,

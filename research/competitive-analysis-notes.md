@@ -1,3 +1,8 @@
+<!--
+   Copyright (c) 2026 Shane Smith / Sassy Consulting LLC. All rights reserved.
+   Proprietary source. This notice is Copyright Management Information (17 U.S.C. 1202); removal or alteration prohibited.
+   CodeMark: SCLLC1-foodie_finder_v8-BBZ5Z7SAOGDS
+-->
 # Competitive Analysis Research Notes
 
 © 2025 Sassy Consulting - A Veteran Owned Company

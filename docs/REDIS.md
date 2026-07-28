@@ -1,3 +1,8 @@
+<!--
+   Copyright (c) 2026 Shane Smith / Sassy Consulting LLC. All rights reserved.
+   Proprietary source. This notice is Copyright Management Information (17 U.S.C. 1202); removal or alteration prohibited.
+   CodeMark: SCLLC1-foodie_finder_v8-PDQY4FAUDBJG
+-->
 # Redis for Local Development
 
 This project uses Redis for background job processing (BullMQ). The following describes how to run Redis locally for development and how CI uses Redis for tests.

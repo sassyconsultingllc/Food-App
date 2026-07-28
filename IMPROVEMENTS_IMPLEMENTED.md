@@ -1,3 +1,8 @@
+<!--
+   Copyright (c) 2026 Shane Smith / Sassy Consulting LLC. All rights reserved.
+   Proprietary source. This notice is Copyright Management Information (17 U.S.C. 1202); removal or alteration prohibited.
+   CodeMark: SCLLC1-foodie_finder_v8-ARNELII64OTV
+-->
 # Foodie Finder v8 - Improvements Implemented
 
 **Date:** January 13, 2026 | **Last Updated:** 2026-05-15  
