@@ -1,4 +1,7 @@
-﻿/**
+﻿// Copyright (c) 2026 Shane Smith / Sassy Consulting LLC. All rights reserved.
+// Proprietary source. This notice is Copyright Management Information (17 U.S.C. 1202); removal or alteration prohibited.
+// CodeMark: SCLLC1-foodie_finder_v8-27ON7YGUIH3Z
+/**
  * Settings Screen
  * © 2025 Sassy Consulting - A Veteran Owned Company
  */
@@ -50,7 +53,7 @@ export default function SettingsScreen() {
   const colors = Colors[colorScheme ?? "light"];
   const router = useRouter();
 
-  const { preferences, savePreferences } = useRestaurantStorage();
+  const { preferences, savePreferences, searchWithNewParams } = useRestaurantStorage();
   const { recentlyViewedCount, clearHistory } = useRecentlyViewed();
   const { themeMode, setThemeMode } = useTheme();
   const { mode, tier, license, daysRemaining, deactivate } = useLicense();
@@ -111,9 +114,14 @@ export default function SettingsScreen() {
     }
 
     await savePreferences({
-      defaultZipCode: zipCode,
+      defaultZipCode: zipCode.trim(),
+      defaultPostalCode: zipCode.trim(),
       defaultRadius: radiusNum,
     });
+
+    if (zipCode.trim()) {
+      await searchWithNewParams(zipCode.trim(), radiusNum, { persist: false });
+    }
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     Alert.alert("Saved", "Your preferences have been saved.");

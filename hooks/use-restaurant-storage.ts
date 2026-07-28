@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Shane Smith / Sassy Consulting LLC. All rights reserved.
+// Proprietary source. This notice is Copyright Management Information (17 U.S.C. 1202); removal or alteration prohibited.
+// CodeMark: SCLLC1-foodie_finder_v8-MMDNRRRMRQUS
 /**
  * Restaurant Storage Hook
  * © 2025 Sassy Consulting - A Veteran Owned Company
@@ -65,6 +68,10 @@ export function useRestaurantStorage() {
 
   // Track if we've done initial sync to avoid duplicate triggers
   const initialSyncDone = useRef(false);
+  const preferencesRef = useRef(preferences);
+  useEffect(() => {
+    preferencesRef.current = preferences;
+  }, [preferences]);
 
   // Load preferences from storage - sync search params in same effect to avoid race.
   // Uses multiGet to collapse 3+ sequential JNI bridge hops into a single call —
@@ -74,19 +81,29 @@ export function useRestaurantStorage() {
       try {
         const [
           [, stored],
+          [, legacyStored],
           [, notesStored],
           [, favoritesStored],
         ] = await AsyncStorage.multiGet([
           STORAGE_KEYS.PREFERENCES,
+          "@foodie_finder_preferences",
           STORAGE_KEYS.PERSONAL_NOTES,
           STORAGE_KEYS.FAVORITES_DATA,
         ]);
 
         let loadedPrefs = DEFAULT_PREFERENCES;
-        if (stored) {
-          const parsed = JSON.parse(stored);
+        const prefsJson = stored || legacyStored;
+        if (prefsJson) {
+          const parsed = JSON.parse(prefsJson);
           loadedPrefs = { ...DEFAULT_PREFERENCES, ...parsed };
           setPreferences(loadedPrefs);
+          // Migrate legacy key to canonical storage if needed
+          if (!stored && legacyStored) {
+            await AsyncStorage.setItem(
+              STORAGE_KEYS.PREFERENCES,
+              JSON.stringify(loadedPrefs)
+            );
+          }
         }
 
         // Also load personal notes
@@ -238,6 +255,13 @@ export function useRestaurantStorage() {
       let persisted: UserPreferences | null = null;
       setPreferences((prev) => {
         const next = { ...prev, ...newPrefs };
+        // Keep postal/zip aliases in sync
+        if (newPrefs.defaultPostalCode !== undefined) {
+          next.defaultZipCode = newPrefs.defaultPostalCode;
+        }
+        if (newPrefs.defaultZipCode !== undefined) {
+          next.defaultPostalCode = newPrefs.defaultZipCode;
+        }
         persisted = next;
         return next;
       });
@@ -247,8 +271,12 @@ export function useRestaurantStorage() {
         );
       }
 
-      // Clear cache when preferences change so new data is fetched
-      if (newPrefs.defaultZipCode || newPrefs.defaultRadius) {
+      // Clear cache when location preferences change so new data is fetched
+      if (
+        newPrefs.defaultZipCode !== undefined ||
+        newPrefs.defaultPostalCode !== undefined ||
+        newPrefs.defaultRadius !== undefined
+      ) {
         await AsyncStorage.removeItem(STORAGE_KEYS.CACHED_RESTAURANTS);
         await AsyncStorage.removeItem(STORAGE_KEYS.CACHE_TIMESTAMP);
       }
@@ -267,14 +295,34 @@ export function useRestaurantStorage() {
     await searchQuery.refetch();
   }, [searchQuery]);
 
-  // Search restaurants with new ZIP code/radius (triggers immediate API call)
+  // Search restaurants with new ZIP code/radius (triggers immediate API call).
+  // Also persists location to preferences so Home, Browse, and Settings stay in sync.
   const searchWithNewParams = useCallback(async (
     zipCode: string,
-    radius: number
+    radius: number,
+    options?: { persist?: boolean }
   ) => {
     setRestaurantsError(null);
     setCurrentSearchParams({ zipCode, radius });
-  }, []);
+
+    if (options?.persist === false) return;
+
+    const zip = zipCode.trim();
+    if (!zip) return;
+
+    const prev = preferencesRef.current;
+    const locationChanged =
+      prev.defaultZipCode !== zip ||
+      prev.defaultPostalCode !== zip ||
+      prev.defaultRadius !== radius;
+    if (locationChanged) {
+      await savePreferences({
+        defaultZipCode: zip,
+        defaultPostalCode: zip,
+        defaultRadius: radius,
+      });
+    }
+  }, [setCurrentSearchParams, savePreferences]);
 
   // Search restaurants with different parameters.
   //
@@ -613,6 +661,7 @@ export function useRestaurantStorage() {
   return {
     restaurants,
     preferences,
+    currentSearchParams,
     loading,
     isFetching,
     error: restaurantsError,

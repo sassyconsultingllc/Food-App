@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Shane Smith / Sassy Consulting LLC. All rights reserved.
+// Proprietary source. This notice is Copyright Management Information (17 U.S.C. 1202); removal or alteration prohibited.
+// CodeMark: SCLLC1-foodie_finder_v8-CTAF7EICF3DO
 /**
  * Home Screen - Visual Spinner with Filters
  * © 2025 Sassy Consulting - A Veteran Owned Company
@@ -40,7 +43,7 @@ import { useRestaurantStorage } from "@/hooks/use-restaurant-storage";
 import { useSpinHistory } from "@/hooks/use-spin-history";
 import { useSoundSettings } from "@/hooks/use-sound-settings";
 import { isRestaurantOpenNow } from "@/utils/hours-utils";
-import { calculateDistance, isValidPostalCode } from "@/utils/geo-utils";
+import { isValidPostalCode } from "@/utils/geo-utils";
 import { Restaurant } from "@/types/restaurant";
 
 // Mirrors the `height` set in app/(tabs)/_layout.tsx (`49 + insets.bottom`).
@@ -58,12 +61,8 @@ export default function HomeScreen() {
 
   // Location hook
   const {
-    latitude: locationLat,
-    longitude: locationLon,
     loading: locationLoading,
     error: locationError,
-    latitude,
-    longitude,
     city,
     state: locationState,
     zipCode: locationZipCode,
@@ -75,6 +74,7 @@ export default function HomeScreen() {
   const {
     restaurants,
     preferences,
+    currentSearchParams,
     savePreferences,
     searchWithNewParams,
     isFetching,
@@ -93,7 +93,7 @@ export default function HomeScreen() {
   const [zipCode, setZipCode] = useState("");
   const [radius, setRadius] = useState(5);
   
-  // Sync local state with saved preferences and trigger initial search when available
+  // Sync local UI from saved preferences on load or when Settings changes them.
   useEffect(() => {
     const savedZip = preferences.defaultZipCode || preferences.defaultPostalCode || "";
     const savedRadius = preferences.defaultRadius || 5;
@@ -109,14 +109,21 @@ export default function HomeScreen() {
 
     if (preferenceZipChanged) {
       lastPreferenceZipRef.current = savedZip;
-      searchWithNewParams(savedZip, savedRadius);
+      // Context may already be seeded on mount — avoid a duplicate search.
+      if (
+        currentSearchParams.zipCode !== savedZip ||
+        currentSearchParams.radius !== savedRadius
+      ) {
+        searchWithNewParams(savedZip, savedRadius, { persist: false });
+      }
     }
   }, [
     preferences.defaultZipCode,
     preferences.defaultPostalCode,
     preferences.defaultRadius,
     searchWithNewParams,
-    zipCode,
+    currentSearchParams.zipCode,
+    currentSearchParams.radius,
   ]);
   const [selectedRestaurant, setSelectedRestaurant] = useState<Restaurant | null>(null);
   const [isSpinning, setIsSpinning] = useState(false);
@@ -159,13 +166,9 @@ export default function HomeScreen() {
     // radius if the user has no saved preference yet.
     const savedRadius = preferences.defaultRadius ?? radius;
     searchWithNewParams(locationZipCode, savedRadius);
-    savePreferences({
-      defaultZipCode: locationZipCode,
-      defaultPostalCode: locationZipCode,
-      defaultCountryCode: locationCountryCode ?? undefined,
-      // Do NOT include defaultRadius here — we'd overwrite the user's
-      // saved preference with whatever local state happens to hold.
-    });
+    if (locationCountryCode) {
+      savePreferences({ defaultCountryCode: locationCountryCode });
+    }
   }, [
     city,
     locationState,
@@ -191,20 +194,11 @@ export default function HomeScreen() {
     return Array.from(cuisines).sort();
   }, [restaurants]);
 
-  // Filter restaurants based on current filters
+  // Filter restaurants based on current filters.
+  // Server search already scopes results to the active postal code + radius;
+  // do NOT additionally filter by device GPS — that blocks valid remote searches.
   const filteredRestaurants = useMemo(() => {
     let filtered = [...restaurants];
-
-
-    // Filter by actual distance from user's GPS coordinates
-    if (locationLat && locationLon) {
-      filtered = filtered.filter(r => {
-        if (!r.latitude || !r.longitude) return true;
-        const dist = calculateDistance(locationLat, locationLon, r.latitude, r.longitude);
-        return dist <= radius;
-      });
-    }
-    
     // Open Now filter
     if (filters.openNow) {
       filtered = filtered.filter(r => isRestaurantOpenNow(r.hours));
@@ -233,7 +227,7 @@ export default function HomeScreen() {
     }
     
     return filtered;
-  }, [restaurants, locationLat, locationLon, radius, filters, getRecentlyPickedIds]);
+  }, [restaurants, filters, getRecentlyPickedIds]);
 
   // Handle GPS location. Wrap in try/catch as defense in depth — the
   // useLocation hook already swallows errors into its own `error` state,

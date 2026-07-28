@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Shane Smith / Sassy Consulting LLC. All rights reserved.
+// Proprietary source. This notice is Copyright Management Information (17 U.S.C. 1202); removal or alteration prohibited.
+// CodeMark: SCLLC1-foodie_finder_v8-AHFASD6HTSIR
 /**
  * Browse Screen - Restaurant List with Filters + AI Semantic Search
  * © 2025 Sassy Consulting - A Veteran Owned Company
@@ -24,6 +27,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Colors, AppColors, Spacing, BorderRadius } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useLocation } from "@/hooks/use-location";
+import { useSearchCenterCoords } from "@/hooks/use-search-center";
 import { useRestaurantStorage } from "@/hooks/use-restaurant-storage";
 import { useResponsive } from "@/hooks/use-responsive";
 import { useSemanticSearch, useVectorStats } from "@/hooks/use-semantic-search";
@@ -99,12 +103,14 @@ export default function BrowseScreen() {
   const {
     preferences,
     restaurants: allRestaurants,
+    currentSearchParams,
     getFavoriteRestaurants,
     getRestaurantsWithDistance,
     toggleFavorite,
     isFavorite,
     searchWithNewParams,
     loading: restaurantsLoading,
+    isFetching,
   } = useRestaurantStorage();
 
   // Build taste profile from favorites so we can flag matching cards below.
@@ -112,10 +118,9 @@ export default function BrowseScreen() {
   const { matchesTaste, profile } = useTasteProfile(
     favoriteRestaurants,
     allRestaurants,
-    { postalCode: preferences.defaultZipCode || preferences.defaultPostalCode }
+    { postalCode: currentSearchParams.zipCode || preferences.defaultZipCode || preferences.defaultPostalCode }
   );
 
-  const { latitude, longitude } = useLocation();
   const { settings: soundSettings } = useSoundSettings();
   const { playSound } = useAppSounds(soundSettings.soundEnabled);
   const { guard, guardLimit } = usePaywall();
@@ -128,13 +133,10 @@ export default function BrowseScreen() {
   const [activePriceFilter, setActivePriceFilter] = useState("all");
   const [activeDietaryFilters, setActiveDietaryFilters] = useState<DietaryOption[]>([]);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
-  const zipCode = preferences.defaultZipCode || preferences.defaultPostalCode || "";
-  const defaultRadius = preferences.defaultRadius || 10;
+  const zipCode = currentSearchParams.zipCode || preferences.defaultZipCode || preferences.defaultPostalCode || "";
+  const defaultRadius = currentSearchParams.radius || preferences.defaultRadius || 10;
 
   // Auto-trigger the scraper when Browse opens and no restaurants are loaded.
-  // This covers the case where the user goes straight to Browse without
-  // searching a ZIP on the home tab first. The scraper result is cached, so
-  // this is essentially free after the first call for a given ZIP+radius.
   const scrapeTriggeredRef = useRef(false);
   useEffect(() => {
     if (!scrapeTriggeredRef.current && zipCode && allRestaurants.length === 0) {
@@ -159,13 +161,22 @@ export default function BrowseScreen() {
     }
   }, [searchQuery, searchMode, aiSearch, aiClear]);
 
-  const userCoords = useMemo(() => {
-    return latitude && longitude ? { lat: latitude, lon: longitude } : null;
-  }, [latitude, longitude]);
+  const { latitude, longitude } = useLocation();
+  const gpsCoords = useMemo(
+    () => (latitude && longitude ? { lat: latitude, lon: longitude } : null),
+    [latitude, longitude]
+  );
+
+  // Distance reference: active search area first, GPS only as fallback.
+  const searchCenterCoords = useSearchCenterCoords(allRestaurants, zipCode, {
+    countryCode: preferences.defaultCountryCode,
+    gpsCoords,
+    trustRestaurants: !isFetching,
+  });
 
   const restaurantsWithDistance = useMemo(() => {
-    return getRestaurantsWithDistance(userCoords);
-  }, [getRestaurantsWithDistance, userCoords]);
+    return getRestaurantsWithDistance(searchCenterCoords);
+  }, [getRestaurantsWithDistance, searchCenterCoords]);
 
   // Build a map for quick lookups
   const restaurantMap = useMemo(() => {
