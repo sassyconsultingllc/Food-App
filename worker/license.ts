@@ -477,11 +477,15 @@ export function registerLicenseRoutes(app: Hono<{ Bindings: Env }>): void {
         .first<{ n: number }>();
       if ((active?.n ?? 0) >= license.max_devices) {
         await logEvent(db, license.id, "activate_blocked", "device_limit");
+        // 409 Conflict (not 403): the key is valid, the request just
+        // conflicts with the active-device set. Also lights up the client's
+        // dedicated "already active on another device" message in
+        // lib/license.ts activateLicense() instead of its generic 403 copy.
         return c.json(
           {
             error: `This license is already active on ${license.max_devices} devices. Remove it from another device first (Settings > Remove License).`,
           },
-          403
+          409
         );
       }
       await db
