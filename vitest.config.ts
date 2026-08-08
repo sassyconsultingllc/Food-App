@@ -17,7 +17,10 @@ const flowStripPlugin = {
   enforce: "pre",
   transform(code: string, id: string) {
     if (!id.includes("node_modules")) return null;
-    console.log(`[vitest] transforming ${id}`);
+    // Flow lives in React Native's .js sources. Running the flow parser
+    // over a dependency's TypeScript (e.g. expo-modules-core/src/index.ts,
+    // which uses `export { X, type Y }`) is a parse error, so skip TS.
+    if (/\.tsx?($|\?)/.test(id)) return null;
     // Strip Flow/typeof exports from any dependency; safe for TS/JS output.
     const result = transformSync(code, {
       plugins: [flowStripTypes],
@@ -60,6 +63,13 @@ export default defineConfig({
     alias: [
       // Map React Native imports (and any subpaths) to a web-friendly mock so Flow syntax isn't parsed
       { find: /^react-native(\/.*)?$/, replacement: path.resolve(__dirname, "tests/react-native-mock.ts") },
+      // Native-backed storage modules: in-memory stand-ins so pure logic in
+      // lib/license.ts is testable without a native module host.
+      { find: /^expo-secure-store$/, replacement: path.resolve(__dirname, "tests/expo-secure-store-mock.ts") },
+      {
+        find: /^@react-native-async-storage\/async-storage$/,
+        replacement: path.resolve(__dirname, "tests/async-storage-mock.ts"),
+      },
       { find: "@", replacement: path.resolve(__dirname, ".") },
     ],
   },

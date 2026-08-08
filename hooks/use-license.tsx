@@ -34,6 +34,7 @@ import {
   hasFeature,
   isEvaluationMode,
   loadLicense,
+  setCachedTier,
   touchValidation,
 } from "@/lib/license";
 
@@ -123,18 +124,29 @@ export function LicenseProvider({ children, onLicenseInvalid }: LicenseProviderP
     [tier],
   );
 
-  const value: LicenseContextValue = {
-    isLoading,
-    isValid,
-    license,
-    tier,
-    mode,
-    daysRemaining: daysRemaining(license),
-    has,
-    activate,
-    deactivate,
-    refresh,
-  };
+  // Keep the module-level tier snapshot in sync so synchronous non-React
+  // call sites (lib/license.ts requireLicense) gate against the real tier.
+  useEffect(() => {
+    setCachedTier(tier);
+  }, [tier]);
+
+  // Memoized: this provider wraps the whole app, so rebuilding `value` on
+  // every render re-rendered every useLicense consumer for no reason.
+  const value: LicenseContextValue = useMemo(
+    () => ({
+      isLoading,
+      isValid,
+      license,
+      tier,
+      mode,
+      daysRemaining: daysRemaining(license),
+      has,
+      activate,
+      deactivate,
+      refresh,
+    }),
+    [isLoading, isValid, license, tier, mode, has, activate, deactivate, refresh],
+  );
 
   return <LicenseContext.Provider value={value}>{children}</LicenseContext.Provider>;
 }

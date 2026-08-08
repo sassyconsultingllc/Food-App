@@ -1,0 +1,3 @@
+Expired Pro licenses now prompt you to renew instead of showing a "contact support" message.
+Fixed a licensing check that could let premium helpers run without a valid license.
+Faster app-wide rendering — the license provider no longer re-renders every screen on each update.

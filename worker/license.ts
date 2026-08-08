@@ -455,7 +455,11 @@ export function registerLicenseRoutes(app: Hono<{ Bindings: Env }>): void {
           .bind(now, license.id)
           .run();
       }
-      return c.json({ error: "This license has expired. Renew to keep Pro access." }, 403);
+      // 410 Gone, not 403: the key was valid and is now past its term. 403
+      // is reserved for revoked/suspended above, whose client-side copy is
+      // "contact support" — the wrong nudge for someone who just needs to
+      // renew. lib/license.ts maps 410 to the renewal message.
+      return c.json({ error: "This license has expired. Renew to keep Pro access." }, 410);
     }
 
     // Device slot accounting. Device ids are stored hashed only.

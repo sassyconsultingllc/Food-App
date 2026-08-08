@@ -59,11 +59,21 @@ export const TIER_FEATURES: Record<LicenseTier, PremiumFeature[]> = {
   lifetime: LIFETIME_FEATURES,
 };
 
-// Soft limits enforced for free tier when paywall is in `enforced` mode.
+// Soft limits for the free tier when paywall is in `enforced` mode.
 // Eval mode ignores these — everything unlimited so testers see the real app.
+//
+// ONLY `maxFavorites` is wired to a call site (the guardLimit() checks in
+// Browse + Restaurant detail). Menu uploads are gated outright by the
+// `menu_photo_uploads` feature rather than a count, so the 0 below is
+// descriptive, not enforced. Spins are deliberately UNLIMITED on free —
+// the spin is the core loop and capping it would gut the free experience.
+// Don't read these as live enforcement; wire a call site first.
 export const FREE_TIER_LIMITS = {
+  /** Enforced: Browse + Restaurant detail add-favorite guards. */
   maxFavorites: 10,
-  spinsPerDay: 20,
+  /** Not enforced — free tier spins are unlimited by design. */
+  spinsPerDay: Infinity,
+  /** Descriptive only — uploads are gated by the menu_photo_uploads feature. */
   menuUploadsPerRestaurant: 0,
 } as const;
 
@@ -169,10 +179,40 @@ export function hasFeature(tier: LicenseTier, feature: PremiumFeature): boolean 
 }
 
 /**
- * Higher-order helper for gating function calls. Throws if the user does
- * not have the required feature. No-op in evaluation mode.
+ * Module-level snapshot of the effective tier, kept in sync by
+ * LicenseProvider. Reading the stored license is async (SecureStore), so
+ * synchronous non-React call sites need this cache to gate at all.
+ * Defaults to `free` — fail closed until the provider has loaded.
+ */
+let cachedTier: LicenseTier = "free";
+
+/** Called by LicenseProvider whenever the effective tier changes. */
+export function setCachedTier(tier: LicenseTier): void {
+  cachedTier = tier;
+}
+
+export function getCachedTier(): LicenseTier {
+  return cachedTier;
+}
+
+export class LicenseRequiredError extends Error {
+  constructor(public readonly feature: PremiumFeature) {
+    super(`A Pro license is required for this feature (${feature}).`);
+    this.name = "LicenseRequiredError";
+  }
+}
+
+/**
+ * Higher-order helper for gating function calls. Throws
+ * LicenseRequiredError if the user does not have the required feature.
+ * No-op in evaluation mode.
  *
  *   const exportSpins = requireLicense("spin_history_export", async () => { ... })
+ *
+ * Prefer useLicense()/usePaywall() inside components — those can present
+ * the upsell. This exists for non-React call sites, and it MUST actually
+ * enforce: it previously called through on both branches, so anything
+ * gated with it silently ran for free-tier users.
  */
 export function requireLicense<TArgs extends unknown[], TReturn>(
   feature: PremiumFeature,
@@ -180,9 +220,9 @@ export function requireLicense<TArgs extends unknown[], TReturn>(
 ): (...args: TArgs) => TReturn {
   return (...args: TArgs) => {
     if (isEvaluationMode()) return fn(...args);
-    // Synchronous wrapper — callers that need an async check should use
-    // the useLicense hook instead. We optimistically allow here and let
-    // the next render of FeatureGate catch missing access.
+    if (!hasFeature(cachedTier, feature)) {
+      throw new LicenseRequiredError(feature);
+    }
     return fn(...args);
   };
 }
@@ -258,6 +298,8 @@ export async function activateLicense(
       friendly = "We couldn't find that license key. Double-check the key from your confirmation email.";
     } else if (res.status === 409) {
       friendly = "This license is already active on another device.";
+    } else if (res.status === 410) {
+      friendly = "This license has expired. Renew it to keep Pro access.";
     } else if (res.status === 429) {
       friendly = "Too many attempts. Please wait a minute and try again.";
     } else if (res.status >= 500) {
