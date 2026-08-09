@@ -13,13 +13,42 @@ import { HoursOfOperation } from "@/types/restaurant";
 const DAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
 /**
- * Check if a restaurant is currently open
+ * Resolve "now" as the wall clock at the restaurant.
+ *
+ * Hours strings are in the restaurant's LOCAL time, so comparing them
+ * against the device clock is wrong whenever the two differ — searching a
+ * distant postal code showed places as open/closed on the searcher's
+ * timezone. When we know the restaurant's UTC offset (Google Places
+ * `utc_offset_minutes`), shift UTC by it and read the result with getUTC*
+ * accessors. Without an offset, fall back to device-local time.
  */
-export function isRestaurantOpenNow(hours?: HoursOfOperation): boolean {
-  if (!hours) return true; // Assume open if no hours data
-  
+function localNowAt(utcOffsetMinutes?: number): { day: number; minutes: number } {
+  if (typeof utcOffsetMinutes === "number" && Number.isFinite(utcOffsetMinutes)) {
+    const shifted = new Date(Date.now() + utcOffsetMinutes * 60_000);
+    return {
+      day: shifted.getUTCDay(),
+      minutes: shifted.getUTCHours() * 60 + shifted.getUTCMinutes(),
+    };
+  }
   const now = new Date();
-  const dayName = DAY_NAMES[now.getDay()] as keyof HoursOfOperation;
+  return { day: now.getDay(), minutes: now.getHours() * 60 + now.getMinutes() };
+}
+
+/**
+ * Check if a restaurant is currently open.
+ *
+ * @param utcOffsetMinutes Restaurant's offset from UTC. Pass
+ *   `restaurant.utcOffsetMinutes` so the check runs on the restaurant's
+ *   clock rather than the device's.
+ */
+export function isRestaurantOpenNow(
+  hours?: HoursOfOperation,
+  utcOffsetMinutes?: number
+): boolean {
+  if (!hours) return true; // Assume open if no hours data
+
+  const now = localNowAt(utcOffsetMinutes);
+  const dayName = DAY_NAMES[now.day] as keyof HoursOfOperation;
   const todayHours = hours[dayName];
   
   if (!todayHours) return true; // Assume open if no hours for today
@@ -61,8 +90,8 @@ export function isRestaurantOpenNow(hours?: HoursOfOperation): boolean {
       closeTime += 24 * 60; // Add 24 hours
     }
     
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
-    
+    const currentMinutes = now.minutes;
+
     // Check if current time is within range
     if (currentMinutes >= openTime && currentMinutes <= closeTime) {
       return true;
@@ -111,7 +140,10 @@ function parseTime(hour: number, minutes: number, amPm?: string, is24h = false):
 /**
  * Get human-readable status
  */
-export function getOpenStatus(hours?: HoursOfOperation): {
+export function getOpenStatus(
+  hours?: HoursOfOperation,
+  utcOffsetMinutes?: number
+): {
   isOpen: boolean;
   statusText: string;
   nextChange?: string;
@@ -120,12 +152,14 @@ export function getOpenStatus(hours?: HoursOfOperation): {
   if (!hours) {
     return { isOpen: false, statusText: "Hours unknown" };
   }
-  
-  const now = new Date();
-  const dayName = DAY_NAMES[now.getDay()] as keyof HoursOfOperation;
+
+  // Same restaurant-local clock as isRestaurantOpenNow — otherwise the
+  // badge could name a different day's hours than the open/closed verdict.
+  const now = localNowAt(utcOffsetMinutes);
+  const dayName = DAY_NAMES[now.day] as keyof HoursOfOperation;
   const todayHoursStr = hours[dayName];
-  
-  const isOpen = isRestaurantOpenNow(hours);
+
+  const isOpen = isRestaurantOpenNow(hours, utcOffsetMinutes);
   
   if (isOpen) {
     // Try to find closing time
@@ -147,8 +181,8 @@ export function getOpenStatus(hours?: HoursOfOperation): {
     return { isOpen: true, statusText: "Open now", todayHours: todayHoursStr };
   }
   
-  // Closed - try to find opening time
-  const todayIndex = now.getDay();
+  // Closed - try to find opening time (restaurant-local day, see localNowAt)
+  const todayIndex = now.day;
   
   // Check today and next 7 days for opening
   for (let i = 0; i < 7; i++) {

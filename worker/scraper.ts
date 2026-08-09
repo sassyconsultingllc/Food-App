@@ -38,6 +38,8 @@ export interface ScrapedRestaurant {
   cuisineType: string;
   categories?: string[];
   hours?: Record<string, string>;
+  /** Restaurant-local offset from UTC (Google `utc_offset_minutes`). */
+  utcOffsetMinutes?: number;
   photos?: string[];
   isCulvers?: boolean;
   flavorOfTheDay?: string;
@@ -423,11 +425,14 @@ async function fetchGooglePlaceDetails(
   phone?: string;
   menuUrl?: string;
   hours?: Record<string, string>;
+  utcOffsetMinutes?: number;
 } | null> {
   try {
     // opening_hours added so the "open now" badge actually works — previously
     // the worker never requested hours and every restaurant showed "Hours unknown".
-    const fields = 'photos,website,formatted_phone_number,url,opening_hours';
+    // utc_offset_minutes lets open-now run on the RESTAURANT's clock instead
+    // of the device's (wrong whenever the user searches another timezone).
+    const fields = 'photos,website,formatted_phone_number,url,opening_hours,utc_offset_minutes';
     const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=${fields}&key=${apiKey}`;
     const res = await fetchWithTimeout(url);
     if (!res.ok) return null;
@@ -441,7 +446,9 @@ async function fetchGooglePlaceDetails(
     // Use restaurant website as menu link (most have a menu page)
     const menuUrl = website || undefined;
     const hours = parseGoogleWeekdayText(d.opening_hours?.weekday_text);
-    return { photos, website, phone: d.formatted_phone_number, menuUrl, hours };
+    const utcOffsetMinutes =
+      typeof d.utc_offset_minutes === 'number' ? d.utc_offset_minutes : undefined;
+    return { photos, website, phone: d.formatted_phone_number, menuUrl, hours, utcOffsetMinutes };
   } catch {
     return null;
   }
@@ -522,6 +529,7 @@ async function fetchGoogle(
         phone: details?.phone,
         menuUrl: details?.menuUrl,
         hours: details?.hours,
+        utcOffsetMinutes: details?.utcOffsetMinutes,
         sources: ['google'],
       };
     });

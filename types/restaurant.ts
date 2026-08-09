@@ -111,6 +111,14 @@ export interface Restaurant {
   // Additional Info
   priceRange?: "$" | "$$" | "$$$" | "$$$$";
   hours?: HoursOfOperation;
+  /**
+   * Minutes the restaurant's local time is offset from UTC (Google Places
+   * `utc_offset_minutes`). Open-now checks use this so a restaurant in
+   * another timezone isn't judged against the device clock. Absent for
+   * sources that don't report it (OSM/HERE/Foursquare) — callers fall back
+   * to device-local time.
+   */
+  utcOffsetMinutes?: number;
   parkingInfo?: string;
   description?: string;
   imageUrl?: string;

@@ -201,7 +201,7 @@ export default function HomeScreen() {
     let filtered = [...restaurants];
     // Open Now filter
     if (filters.openNow) {
-      filtered = filtered.filter(r => isRestaurantOpenNow(r.hours));
+      filtered = filtered.filter(r => isRestaurantOpenNow(r.hours, r.utcOffsetMinutes));
     }
     
     // Cuisine filter

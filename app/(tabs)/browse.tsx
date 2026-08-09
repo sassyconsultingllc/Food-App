@@ -201,7 +201,7 @@ export default function BrowseScreen() {
     // Apply quick filter
     switch (filterConfig.activeQuickFilter) {
       case "open":
-        results = results.filter((r) => isOpenNow(r.hours));
+        results = results.filter((r) => isOpenNow(r.hours, r.utcOffsetMinutes));
         break;
       case "specials":
         results = results.filter((r) => r.dailySpecial);
