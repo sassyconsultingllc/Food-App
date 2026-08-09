@@ -21,6 +21,7 @@ import {
   Modal,
 } from "react-native";
 import * as Haptics from "expo-haptics";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "./themed-text";
 import { ThemedView } from "./themed-view";
@@ -260,7 +261,13 @@ function FilterModal({
 }) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
-  
+  // `presentationStyle="pageSheet"` is iOS-only; on Android this Modal is
+  // fullscreen, so without an explicit top inset the header title renders
+  // underneath the status bar (observed on-device: "Filters" overlapping
+  // the system clock). Pad by the real inset, with a floor for devices
+  // that report 0.
+  const insets = useSafeAreaInsets();
+
   const toggleCuisine = (cuisine: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const newCuisines = filters.cuisineTypes.includes(cuisine)
@@ -289,7 +296,7 @@ function FilterModal({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <ThemedView style={styles.modalContainer}>
+      <ThemedView style={[styles.modalContainer, { paddingTop: Math.max(insets.top, Spacing.md) }]}>
         {/* Header */}
         <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
           <ThemedText type="subtitle">Filters</ThemedText>
