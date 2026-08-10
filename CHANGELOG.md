@@ -15,6 +15,9 @@ The **Terms of Service** linked from every release: <https://sassyconsultingllc.
 
 ## 1.0.4 (vc22) - 2026-08-08
 
+- The spinner now always opens the restaurant it landed on. Results
+  refreshing mid-spin could leave the wheel showing one place while the
+  detail screen opened another.
 - "Open now" is now judged on the restaurant's local time instead of your
   phone's, so searching another area no longer shows places as open when
   they're closed.

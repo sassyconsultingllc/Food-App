@@ -1,0 +1,6 @@
+The spinner now always opens the restaurant it landed on — results refreshing mid-spin could leave the wheel showing one place while the detail screen opened another.
+"Open now" is judged on the restaurant's local time instead of your phone's, so searching another area no longer shows places as open when they're closed.
+Fixed the Filters screen title overlapping the status bar on Android.
+Expired Pro licenses now prompt you to renew instead of showing a "contact support" message.
+Fixed a licensing check that could let premium helpers run without a valid license.
+Faster app-wide rendering.
