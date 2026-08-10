@@ -13,8 +13,12 @@ The **Privacy Policy** linked from every release: <https://sassyconsultingllc.co
 The **Terms of Service** linked from every release: <https://sassyconsultingllc.com/privacy/foodie-finder/terms>
 
 
-## 1.0.4 (vc21) - 2026-08-08
+## 1.0.4 (vc22) - 2026-08-08
 
+- "Open now" is now judged on the restaurant's local time instead of your
+  phone's, so searching another area no longer shows places as open when
+  they're closed.
+- Fixed the Filters screen title overlapping the status bar on Android.
 - Expired Pro licenses now prompt you to renew instead of showing a
   "contact support" message.
 - Fixed a licensing check that could let premium helpers run without a

@@ -10,7 +10,7 @@
  * a winner. Large text, 3-D perspective for the older crowd.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, View, StyleSheet, Pressable, useWindowDimensions } from "react-native";
 import Animated, {
   useSharedValue,
@@ -100,14 +100,35 @@ export function SpinnerWheel({
     };
   }, []);
 
+  // A spin interrupted before its completion callback (parent disabled the
+  // wheel, results were cleared) would otherwise leave the reel pinned to a
+  // snapshot that no longer matches the search — release it once the parent
+  // reports the spin is over.
+  useEffect(() => {
+    if (!isSpinning) setFrozenList(null);
+  }, [isSpinning]);
+
   // Build a long repeating reel so the scroll can wrap around.
   // No cap — the wheel reflects the full filtered match count so the
   // user can't "lose" eligible restaurants past an arbitrary slice. For
   // typical filtered sets (≤ ~100), the resulting reel mount cost is
   // negligible compared to the spin animation work.
+  // Snapshot of the list taken when a spin starts, held for the duration of
+  // the animation.
+  //
+  // The landing offset is computed from the list as it was at spin time:
+  // reel index (LAPS-2)*N + winnerIndex, which maps back to winnerIndex only
+  // while N and the item order stay put. If `restaurants` changes mid-spin —
+  // a background scrape resolving, the parent's filter memo recomputing, an
+  // "Open Now" filter flipping at an opening/closing boundary — the reel
+  // re-populates under a scrollY that is still travelling to the OLD target.
+  // The slot that lands under the pointer is then a different restaurant than
+  // the one handed to onSpinComplete: the wheel says one thing, the detail
+  // screen opens another. Freezing the data removes that whole class of race.
+  const [frozenList, setFrozenList] = useState<Restaurant[] | null>(null);
   const displayRestaurants = useMemo(
-    () => restaurants,
-    [restaurants],
+    () => frozenList ?? restaurants,
+    [frozenList, restaurants],
   );
 
   // Repeat the list enough times so we can scroll through many "laps"
@@ -126,7 +147,12 @@ export function SpinnerWheel({
   const totalHeight = reelItems.length * SLOT_HEIGHT;
 
   const handleSpin = useCallback(() => {
-    if (isSpinning || disabled || displayRestaurants.length === 0) return;
+    if (isSpinning || disabled || restaurants.length === 0) return;
+
+    // Everything below is derived from this ONE snapshot — the winner, the
+    // reel contents, and the landing offset must all agree on the same list.
+    const spinList = restaurants;
+    setFrozenList(spinList);
 
     // Reset to zero before each spin so scrollY doesn't accumulate across
     // spins. finalScroll is computed against the LAPS constant only, not
@@ -140,13 +166,13 @@ export function SpinnerWheel({
     onSpinStart();
 
     // Pick random winner
-    const winnerIndex = Math.floor(Math.random() * displayRestaurants.length);
-    const winner = displayRestaurants[winnerIndex];
+    const winnerIndex = Math.floor(Math.random() * spinList.length);
+    const winner = spinList[winnerIndex];
 
     // Scroll through several full laps then land on the winner
     // The center slot index in the viewport: floor(VISIBLE_SLOTS / 2)
     const centerOffset = Math.floor(VISIBLE_SLOTS / 2) * SLOT_HEIGHT;
-    const fullLapsScroll = (LAPS - 2) * displayRestaurants.length * SLOT_HEIGHT;
+    const fullLapsScroll = (LAPS - 2) * spinList.length * SLOT_HEIGHT;
     const winnerScrollPos = winnerIndex * SLOT_HEIGHT;
     const finalScroll = fullLapsScroll + winnerScrollPos - centerOffset;
 
@@ -168,6 +194,10 @@ export function SpinnerWheel({
         if (finished) {
           runOnJS(Haptics.notificationAsync)(Haptics.NotificationFeedbackType.Success);
           runOnJS(onSpinComplete)(winner);
+          // Release the snapshot only after the winner is reported. The
+          // result overlay is up by then, so returning to live data can't
+          // visibly swap the slot under the pointer.
+          runOnJS(setFrozenList)(null);
         }
       },
     );
@@ -186,7 +216,7 @@ export function SpinnerWheel({
       }
     };
     tickHaptic();
-  }, [isSpinning, disabled, displayRestaurants, scrollY, glowOpacity, onSpinStart, onSpinComplete]);
+  }, [isSpinning, disabled, restaurants, scrollY, glowOpacity, onSpinStart, onSpinComplete]);
 
   // Animated reel position
   const animatedReelStyle = useAnimatedStyle(() => ({
