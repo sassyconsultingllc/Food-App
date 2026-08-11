@@ -80,6 +80,13 @@
         "rollout": 0.1
       }
     },
+    "production-full": {
+      "android": {
+        "serviceAccountKeyPath": "./keys/foodie-finder-482309-b295a6ae77f9.json",
+        "track": "production",
+        "releaseStatus": "completed"
+      }
+    },
     "production": {
       "android": {
         "serviceAccountKeyPath": "./keys/foodie-finder-482309-b295a6ae77f9.json",

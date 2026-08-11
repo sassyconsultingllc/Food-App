@@ -66,6 +66,7 @@ export default defineConfig({
       // Native-backed storage modules: in-memory stand-ins so pure logic in
       // lib/license.ts is testable without a native module host.
       { find: /^expo-secure-store$/, replacement: path.resolve(__dirname, "tests/expo-secure-store-mock.ts") },
+      { find: /^expo-constants$/, replacement: path.resolve(__dirname, "tests/expo-constants-mock.ts") },
       {
         find: /^@react-native-async-storage\/async-storage$/,
         replacement: path.resolve(__dirname, "tests/async-storage-mock.ts"),

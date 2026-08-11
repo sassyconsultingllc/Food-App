@@ -4,6 +4,14 @@
 import React from "react";
 import { afterEach, vi } from "vitest";
 
+// React Native injects __DEV__ at runtime; Vitest does not. Anything pulling
+// in expo-modules-core (expo-constants, expo-secure-store, …) dereferences it
+// at module scope and dies with "__DEV__ is not defined". Match a production
+// bundle so dev-only branches stay out of tests.
+if (typeof (globalThis as any).__DEV__ === "undefined") {
+  (globalThis as any).__DEV__ = false;
+}
+
 // Log uncaught errors for easier debugging of transform issues
 if (typeof process !== "undefined") {
   process.on("uncaughtException", (err) => {

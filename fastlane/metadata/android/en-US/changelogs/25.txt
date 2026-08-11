@@ -1,3 +1,4 @@
+Updating the app now clears cached restaurant data automatically, so a new version never shows results saved by the old one. Your Pro license, favorites, notes, and settings are kept.
 The spinner now always opens the restaurant it landed on — results refreshing mid-spin could leave the wheel showing one place while the detail screen opened another.
 "Open now" is judged on the restaurant's local time instead of your phone's, so searching another area no longer shows places as open when they're closed.
 Fixed the Filters screen title overlapping the status bar on Android.

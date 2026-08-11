@@ -37,6 +37,7 @@ import { validateEnvironment } from "@/lib/env-validator";
 import { trpc, createTRPCClient } from "@/lib/trpc";
 import { LicenseProvider } from "@/hooks/use-license";
 import { PaywallProvider } from "@/components/paywall-host";
+import { runUpdateMigrationIfNeeded } from "@/lib/update-migration";
 
 /**
  * Invisible bridge that sits inside the tRPC provider tree and mounts the
@@ -65,16 +66,34 @@ function RootLayoutContent() {
   const [insets, setInsets] = useState<EdgeInsets>(initialInsets);
   const [frame, setFrame] = useState<Rect>(initialFrame);
 
-  // Dismiss the native splash now that the React tree is mounting.
-  // Runs on the next frame so first paint has actual UI behind the fade.
+  // Post-update cache reset. This MUST settle before the providers below
+  // mount: they read AsyncStorage in their own effects, so running the sweep
+  // concurrently would let a provider load a cache entry microseconds before
+  // the migration deletes it — leaving in-memory state the storage no longer
+  // backs. Gate the tree on it instead. It is a no-op on an unchanged build.
+  const [storageReady, setStorageReady] = useState(false);
   useEffect(() => {
+    let cancelled = false;
+    runUpdateMigrationIfNeeded().finally(() => {
+      if (!cancelled) setStorageReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Dismiss the native splash now that the React tree is mounting.
+  // Held until the migration settles so the splash covers the reset rather
+  // than flashing an empty app behind it.
+  useEffect(() => {
+    if (!storageReady) return;
     const id = requestAnimationFrame(() => {
       SplashScreen.hideAsync().catch(() => {
         // already hidden; ignore
       });
     });
     return () => cancelAnimationFrame(id);
-  }, []);
+  }, [storageReady]);
 
   // Play app-open sound on first mount
   const { playSound } = useAppSounds(true);
@@ -131,7 +150,9 @@ function RootLayoutContent() {
     [initialFrame, initialInsets],
   );
 
-  const appContent = (
+  // Hold the tree until the post-update sweep settles (see above). The native
+  // splash is still up at this point, so this renders nothing visible.
+  const appContent = !storageReady ? null : (
     <LicenseProvider>
       <PaywallProvider>
         <RestaurantSearchProvider>

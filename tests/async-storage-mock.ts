@@ -17,6 +17,18 @@ const AsyncStorageMock = {
   async clear(): Promise<void> {
     store.clear();
   },
+  async getAllKeys(): Promise<string[]> {
+    return Array.from(store.keys());
+  },
+  async multiRemove(keys: string[]): Promise<void> {
+    for (const k of keys) store.delete(k);
+  },
+  async multiSet(pairs: [string, string][]): Promise<void> {
+    for (const [k, v] of pairs) store.set(k, v);
+  },
+  async multiGet(keys: string[]): Promise<[string, string | null][]> {
+    return keys.map((k) => [k, store.has(k) ? (store.get(k) as string) : null]);
+  },
 };
 
 export default AsyncStorageMock;
