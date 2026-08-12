@@ -13,7 +13,7 @@ The **Privacy Policy** linked from every release: <https://sassyconsultingllc.co
 The **Terms of Service** linked from every release: <https://sassyconsultingllc.com/privacy/foodie-finder/terms>
 
 
-## 1.0.4 (vc25) - 2026-08-10
+## 1.0.4 (vc27) - 2026-08-10
 
 - Updating the app now clears cached restaurant data automatically, so a
   new version never shows results saved by the old one. Your Pro license,
