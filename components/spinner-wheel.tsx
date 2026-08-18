@@ -100,13 +100,40 @@ export function SpinnerWheel({
     };
   }, []);
 
-  // A spin interrupted before its completion callback (parent disabled the
-  // wheel, results were cleared) would otherwise leave the reel pinned to a
-  // snapshot that no longer matches the search — release it once the parent
-  // reports the spin is over.
+  // Did the last spin reach its completion callback? Distinguishes "the spin
+  // finished and the pointer is parked on the winner" from "the spin was
+  // interrupted", which need opposite freeze behaviour below.
+  const spinCompletedRef = useRef(false);
+  /** Called from the animation callback via runOnJS. */
+  const markSpinCompleted = useCallback(() => {
+    spinCompletedRef.current = true;
+  }, []);
+
+  // Release the snapshot ONLY for an interrupted spin (parent disabled the
+  // wheel, results cleared) — otherwise the reel stays pinned to a list that
+  // no longer matches the search.
+  //
+  // A COMPLETED spin must keep its snapshot. onSpinComplete hands the winner
+  // to the parent, which records it in spin history; the "Exclude Recently
+  // Picked" filter then drops that very restaurant from `restaurants` in the
+  // same tick (observed live: 50 matches -> 49). Releasing here re-rendered
+  // the reel against the shorter list while scrollY stayed put, sliding a
+  // different card under the pointer — the wheel showed "Bob's BBQ Emporium"
+  // while the result card correctly read "Culver's". The winner was never
+  // wrong; the wheel was. Hold the snapshot until the next spin re-takes it.
   useEffect(() => {
-    if (!isSpinning) setFrozenList(null);
+    if (!isSpinning && !spinCompletedRef.current) setFrozenList(null);
   }, [isSpinning]);
+
+  // Search genuinely changed (new postal code, cleared results) — drop the
+  // stale snapshot so the wheel reflects the new set rather than the last
+  // spin's.
+  useEffect(() => {
+    if (restaurants.length === 0) {
+      spinCompletedRef.current = false;
+      setFrozenList(null);
+    }
+  }, [restaurants.length]);
 
   // Build a long repeating reel so the scroll can wrap around.
   // No cap — the wheel reflects the full filtered match count so the
@@ -152,6 +179,7 @@ export function SpinnerWheel({
     // Everything below is derived from this ONE snapshot — the winner, the
     // reel contents, and the landing offset must all agree on the same list.
     const spinList = restaurants;
+    spinCompletedRef.current = false;
     setFrozenList(spinList);
 
     // Reset to zero before each spin so scrollY doesn't accumulate across
@@ -193,11 +221,15 @@ export function SpinnerWheel({
       (finished) => {
         if (finished) {
           runOnJS(Haptics.notificationAsync)(Haptics.NotificationFeedbackType.Success);
+          // Mark completion BEFORE reporting the winner: onSpinComplete
+          // synchronously flips isSpinning false, and the release effect
+          // reads this flag on that same transition.
+          runOnJS(markSpinCompleted)();
           runOnJS(onSpinComplete)(winner);
-          // Release the snapshot only after the winner is reported. The
-          // result overlay is up by then, so returning to live data can't
-          // visibly swap the slot under the pointer.
-          runOnJS(setFrozenList)(null);
+          // Deliberately NOT releasing the snapshot here. The result overlay
+          // does not cover the wheel, and reporting the winner shrinks
+          // `restaurants` via the recently-picked filter — dropping back to
+          // live data slides a different card under the pointer.
         }
       },
     );
