@@ -1,5 +1,8 @@
 // Copyright (c) 2026 Shane Smith / Sassy Consulting LLC. All rights reserved.
 // Proprietary source. This notice is Copyright Management Information (17 U.S.C. 1202); removal or alteration prohibited.
+// CodeMark: SCLLC1-Projects-UPCDTY4O6JOX
+// Copyright (c) 2026 Shane Smith / Sassy Consulting LLC. All rights reserved.
+// Proprietary source. This notice is Copyright Management Information (17 U.S.C. 1202); removal or alteration prohibited.
 // In-memory stand-in for expo-secure-store under Vitest. The real module
 // pulls expo-modules-core (native bindings + TS syntax the flow-strip
 // transform can't parse), which broke any test importing lib/license.ts.

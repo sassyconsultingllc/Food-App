@@ -1,5 +1,8 @@
 // Copyright (c) 2026 Shane Smith / Sassy Consulting LLC. All rights reserved.
 // Proprietary source. This notice is Copyright Management Information (17 U.S.C. 1202); removal or alteration prohibited.
+// CodeMark: SCLLC1-Projects-4EHRIP65V3UA
+// Copyright (c) 2026 Shane Smith / Sassy Consulting LLC. All rights reserved.
+// Proprietary source. This notice is Copyright Management Information (17 U.S.C. 1202); removal or alteration prohibited.
 // Stand-in for expo-constants under Vitest. The real module reaches through
 // expo-modules-core for the native `expo` global, which doesn't exist off-device.
 // Values mirror a production Android build so currentBuildId() is stable.
