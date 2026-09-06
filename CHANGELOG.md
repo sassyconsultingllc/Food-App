@@ -13,18 +13,11 @@ The **Privacy Policy** linked from every release: <https://sassyconsultingllc.co
 The **Terms of Service** linked from every release: <https://sassyconsultingllc.com/privacy/foodie-finder/terms>
 
 
-## 1.0.4 (vc28) - 2026-08-10
+## 1.0.4 (vc28) - 2026-08-12
 
 - Updating the app now clears cached restaurant data automatically, so a
   new version never shows results saved by the old one. Your Pro license,
   favorites, notes, and settings are kept.
-
-
-<!-- vc22 and vc23 were consumed by EAS build requests that failed during
-     upload/queueing; no artifact was ever produced for either. The EAS
-     remote counter increments on request, not on success. -->
-
-
 - The spinner now always opens the restaurant it landed on. Results
   refreshing mid-spin could leave the wheel showing one place while the
   detail screen opened another.
@@ -38,6 +31,12 @@ The **Terms of Service** linked from every release: <https://sassyconsultingllc.
   valid license.
 - Faster app-wide rendering: the license provider no longer re-renders
   every screen on each update.
+
+<!-- versionCodes 22-27 have no published release. The EAS remote counter
+     increments on build REQUEST, not on success, so failed tarball uploads
+     (ECONNRESET) consumed 22, 23, 25, 26; vc24 and vc27 built but predated
+     the real spinner fix and were superseded before submission. vc28 is the
+     first artifact of this cycle intended for Play. -->
 
 ## 1.0.3 (vc14) - 2026-07-28
 
