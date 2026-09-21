@@ -76,6 +76,13 @@ export function PersonalNotesModal({
     onClose();
   };
 
+  const handleCancel = () => {
+    // Discard in-progress edits. Save is explicit; swipe/back still
+    // auto-persists via handleDismiss so typed text isn't lost.
+    setNotes(savedRef.current);
+    onClose();
+  };
+
   // Save-on-dismiss: if the user swipes the sheet down on iOS or hits the
   // Android back button, Modal's onRequestClose fires. We auto-persist any
   // unsaved edits so the user never loses typed text.
@@ -107,14 +114,14 @@ export function PersonalNotesModal({
         <ThemedView style={styles.container}>
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
-            <Pressable onPress={handleDismiss} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close personal notes">
+            <Pressable onPress={handleCancel} hitSlop={12} accessibilityRole="button" accessibilityLabel="Cancel personal notes">
               <ThemedText style={{ color: colors.textSecondary }}>Cancel</ThemedText>
             </Pressable>
             <View style={styles.headerTitle}>
               <IconSymbol name="note.text" size={18} color={colors.accent} />
               <ThemedText type="defaultSemiBold">Personal Notes</ThemedText>
             </View>
-            <Pressable onPress={handleSave} hitSlop={12}>
+            <Pressable onPress={handleSave} hitSlop={12} accessibilityRole="button" accessibilityLabel="Save personal notes">
               <ThemedText style={{ color: colors.accent, fontWeight: "600" }}>Save</ThemedText>
             </Pressable>
           </View>

@@ -3,8 +3,6 @@
 // CodeMark: SCLLC1-foodie_finder_v8-2RT3S5UDBZ7V
 /**
  * Public Notes Section ("Community Tips")
- * Ac 2025 Sassy Consulting - A Veteran Owned Company
- *
  * Displays and submits public notes for a restaurant.
  * Uses pii-guard.ts for client-side PII detection + content moderation.
  * Backend: getPublicNotes / addPublicNote via tRPC.
@@ -45,6 +43,15 @@ interface PublicNotesSectionProps {
    * itself into view on focus so the OS keyboard doesn't cover it.
    */
   parentScrollRef?: React.RefObject<ScrollView | null>;
+}
+
+function unescapeHtml(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
 }
 
 function timeAgo(ts: number): string {
@@ -147,8 +154,10 @@ export function PublicNotesSection({
     const text = newNote.trim();
     if (!text) return;
 
-    // Client-side PII + moderation check
-    const check = checkPublicNote(text);
+    // Client-side PII + moderation on the note AND optional display name
+    // (a phone/email in the name is just as public as one in the body).
+    const name = displayName.trim();
+    const check = checkPublicNote(name ? `${name}\n${text}` : text);
 
     if (check.blocked) {
       Alert.alert("Can't post this", check.blockReason || "Content not allowed");
@@ -159,11 +168,11 @@ export function PublicNotesSection({
     if (check.piiWarning) {
       const proceed = await new Promise<boolean>((resolve) => {
         Alert.alert(
-          "Heads up",
-          check.piiWarning + "\n\nCommunity tips are visible to everyone. Post anyway?",
+          "Personal info detected",
+          "This may contain personal info (email/phone). Public notes are visible to everyone. Continue anyway?",
           [
-            { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
-            { text: "Post anyway", onPress: () => resolve(true) },
+            { text: "No", style: "cancel", onPress: () => resolve(false) },
+            { text: "Yes", onPress: () => resolve(true) },
           ]
         );
       });
@@ -179,7 +188,7 @@ export function PublicNotesSection({
       lat: latitude,
       lng: longitude,
       text,
-      displayName: displayName.trim() || undefined,
+      displayName: name || undefined,
     });
   };
 
@@ -187,9 +196,9 @@ export function PublicNotesSection({
     <View style={[styles.noteCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       <View style={styles.noteHeader}>
         <View style={styles.noteAuthor}>
-          <IconSymbol name="person.circle" size={16} color={colors.accent} />
+          <IconSymbol name="person.circle" size={16} color={AppColors.skyBlue} />
           <ThemedText style={[styles.authorName, { color: colors.text }]}>
-            {item.name || "Anonymous"}
+            {unescapeHtml(item.name || "Anonymous")}
           </ThemedText>
         </View>
         <ThemedText style={[styles.noteTime, { color: colors.textSecondary }]}>
@@ -197,7 +206,7 @@ export function PublicNotesSection({
         </ThemedText>
       </View>
       <ThemedText style={[styles.noteText, { color: colors.textSecondary }]}>
-        {item.text}
+        {unescapeHtml(item.text)}
       </ThemedText>
     </View>
   );
@@ -208,17 +217,17 @@ export function PublicNotesSection({
         styles.container,
         {
           backgroundColor: colors.cardBackground,
-          borderLeftColor: AppColors.copper,
+          borderLeftColor: AppColors.skyBlue,
         },
       ]}
     >
       <View style={styles.sectionHeader}>
-        <IconSymbol name="bubble.left.and.bubble.right.fill" size={20} color={AppColors.copper} />
+        <IconSymbol name="bubble.left.and.bubble.right.fill" size={20} color={AppColors.skyBlue} />
         <ThemedText type="subtitle" style={styles.sectionTitle}>
           Community Tips
         </ThemedText>
         {notes.length > 0 && (
-          <View style={[styles.countPill, { backgroundColor: AppColors.copper }]}>
+          <View style={[styles.countPill, { backgroundColor: AppColors.skyBlue }]}>
             <ThemedText style={styles.countPillText}>{notes.length}</ThemedText>
           </View>
         )}
@@ -234,6 +243,23 @@ export function PublicNotesSection({
           <ThemedText style={[styles.loadingText, { color: colors.textSecondary }]}>
             Loading community tips…
           </ThemedText>
+        </View>
+      ) : notesQuery.isError ? (
+        <View style={[styles.emptyState, { borderColor: colors.border }]}>
+          <IconSymbol name="exclamationmark.circle" size={28} color={colors.textSecondary} />
+          <ThemedText style={[styles.emptyTitle, { color: colors.text }]}>
+            Couldn&apos;t load tips
+          </ThemedText>
+          <Pressable
+            onPress={() => notesQuery.refetch()}
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading community tips"
+            hitSlop={8}
+          >
+            <ThemedText style={{ color: AppColors.skyBlue, fontWeight: "600" }}>
+              Tap to retry
+            </ThemedText>
+          </Pressable>
         </View>
       ) : notes.length > 0 ? (
         <View style={styles.notesList}>
@@ -258,7 +284,7 @@ export function PublicNotesSection({
         </View>
       )}
 
-      {showInput ? (
+      {showInput && hasCoords ? (
         <View
           ref={inputAnchorRef}
           style={[styles.inputSection, { borderColor: colors.border }]}
@@ -288,14 +314,18 @@ export function PublicNotesSection({
             </ThemedText>
             <View style={styles.buttonRow}>
               <Pressable
-                onPress={() => { setShowInput(false); setNewNote(""); }}
+                onPress={() => { setShowInput(false); setNewNote(""); setDisplayName(""); }}
                 style={[styles.cancelButton, { borderColor: colors.border }]}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel adding a tip"
               >
                 <ThemedText style={{ color: colors.textSecondary }}>Cancel</ThemedText>
               </Pressable>
               <Pressable
                 onPress={handleSubmit}
                 disabled={submitting || !newNote.trim()}
+                accessibilityRole="button"
+                accessibilityLabel="Post community tip"
                 style={[
                   styles.submitButton,
                   { backgroundColor: newNote.trim() ? colors.accent : colors.border },
@@ -310,6 +340,10 @@ export function PublicNotesSection({
             </View>
           </View>
         </View>
+      ) : !hasCoords ? (
+        <ThemedText style={[styles.sectionSubtitle, { color: colors.textSecondary, marginBottom: 0 }]}>
+          Community tips aren&apos;t available for this place yet.
+        </ThemedText>
       ) : (
         <Pressable
           onPress={() => {
@@ -317,9 +351,11 @@ export function PublicNotesSection({
             setShowInput(true);
             scrollInputIntoView();
           }}
+          accessibilityRole="button"
+          accessibilityLabel="Share a community tip"
           style={({ pressed }) => [
             styles.addTipButton,
-            { backgroundColor: AppColors.copper, opacity: pressed ? 0.9 : 1 },
+            { backgroundColor: AppColors.skyBlue, opacity: pressed ? 0.9 : 1 },
           ]}
         >
           <IconSymbol name="plus.bubble.fill" size={18} color={AppColors.white} />

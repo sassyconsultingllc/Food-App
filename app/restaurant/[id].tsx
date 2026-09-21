@@ -14,11 +14,9 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Pressable,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -314,6 +312,24 @@ export default function RestaurantDetailScreen() {
           <IconSymbol name="chevron.left" size={24} color={AppColors.charcoal} />
         </Pressable>
 
+        {/* Personal Notes — spec: near favorite/share */}
+        <Pressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setNotesModalVisible(true);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={currentNotes ? "Edit personal notes" : "Add personal notes"}
+          hitSlop={8}
+          style={[styles.headerButton, styles.notesHeaderButton, { top: insets.top + 8 }]}
+        >
+          <IconSymbol
+            name="note.text"
+            size={22}
+            color={currentNotes ? AppColors.warning : AppColors.charcoal}
+          />
+        </Pressable>
+
         {/* Share Button */}
         <Pressable
           onPress={handleSharePress}
@@ -420,6 +436,92 @@ export default function RestaurantDetailScreen() {
           </View>
         )}
 
+        {/* Photo Gallery — immediately after title/specials so the menu
+            isn't buried under Contact (CLAUDE.md Bug 2). */}
+        {foodPhotos.length > 0 && (
+          <View style={styles.photosSection}>
+            <View style={[styles.sectionHeader, { paddingHorizontal: Spacing.lg }]}>
+              <IconSymbol name="photo.fill" size={20} color={colors.accent} />
+              <ThemedText type="subtitle" style={styles.sectionTitle}>
+                Photos
+              </ThemedText>
+            </View>
+            <PhotoCarousel photos={foodPhotos} restaurantName={restaurant.name} />
+          </View>
+        )}
+
+        {/* Menu Section — classified menu photos (up to 5).
+            While the classifier is running, the section shows a
+            "Searching for menu…" spinner instead of flashing arbitrary photos. */}
+        <MenuSection
+          restaurantId={restaurant.id}
+          restaurantName={restaurant.name}
+          latitude={restaurant.latitude}
+          longitude={restaurant.longitude}
+          website={restaurant.website || restaurant.menu?.url}
+          menuUrl={restaurant.menu?.url}
+          menuPhotos={classifiedMenuPhotos}
+          classifying={classifyingPhotos}
+        />
+
+        {/* Personal Notes — private/yellow, distinct from Community Tips. */}
+        <View
+          style={[
+            styles.section,
+            styles.personalNotesSection,
+            { backgroundColor: colors.cardBackground },
+          ]}
+        >
+          <View style={styles.sectionHeader}>
+            <IconSymbol name="note.text" size={20} color={AppColors.warning} />
+            <ThemedText type="subtitle" style={styles.sectionTitle}>
+              My Notes
+            </ThemedText>
+            <View style={[styles.privatePill, { backgroundColor: AppColors.warning }]}>
+              <ThemedText style={styles.privatePillText}>Private</ThemedText>
+            </View>
+          </View>
+          <ThemedText style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
+            Only on this device — never shared.
+          </ThemedText>
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setNotesModalVisible(true);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={currentNotes ? "Edit personal note" : "Add personal note"}
+            style={({ pressed }) => [
+              styles.inlineNoteInput,
+              {
+                backgroundColor: colors.surface,
+                borderColor: AppColors.warning,
+                opacity: pressed ? 0.9 : 1,
+                minHeight: 56,
+                justifyContent: "center",
+              },
+            ]}
+          >
+            {currentNotes ? (
+              <ThemedText style={{ color: colors.text }} numberOfLines={6}>
+                {currentNotes}
+              </ThemedText>
+            ) : (
+              <ThemedText style={{ color: colors.textSecondary }}>
+                Tap to add a private note (e.g. &quot;get the fish tacos&quot;)
+              </ThemedText>
+            )}
+          </Pressable>
+        </View>
+
+        {/* Community Tips — shared/blue, below personal notes. */}
+        <PublicNotesSection
+          restaurantName={restaurant.name}
+          latitude={restaurant.latitude}
+          longitude={restaurant.longitude}
+          parentScrollRef={scrollViewRef}
+        />
+
         {/* Contact Info */}
         <View style={[styles.section, { backgroundColor: colors.cardBackground }]}>
           <ThemedText type="subtitle" style={styles.sectionTitle}>
@@ -501,77 +603,6 @@ export default function RestaurantDetailScreen() {
             </Pressable>
           )}
         </View>
-
-        {/* Photo Gallery — food/ambiance photos only (menus filtered out) */}
-        {foodPhotos.length > 0 && (
-          <View style={styles.photosSection}>
-            <View style={[styles.sectionHeader, { paddingHorizontal: Spacing.lg }]}>
-              <IconSymbol name="photo.fill" size={20} color={colors.accent} />
-              <ThemedText type="subtitle" style={styles.sectionTitle}>
-                Photos
-              </ThemedText>
-            </View>
-            <PhotoCarousel photos={foodPhotos} restaurantName={restaurant.name} />
-          </View>
-        )}
-
-        {/* Menu Section — classified menu photos (up to 5).
-            While the classifier is running, the section shows a
-            "Searching for menu…" spinner instead of flashing arbitrary photos. */}
-        <MenuSection
-          restaurantId={restaurant.id}
-          restaurantName={restaurant.name}
-          latitude={restaurant.latitude}
-          longitude={restaurant.longitude}
-          website={restaurant.website || restaurant.menu?.url}
-          menuUrl={restaurant.menu?.url}
-          menuPhotos={classifiedMenuPhotos}
-          classifying={classifyingPhotos}
-        />
-
-        {/* Personal Notes — tap to open the modal with quick-note chips. */}
-        <View style={[styles.section, { backgroundColor: colors.cardBackground }]}>
-          <View style={styles.sectionHeader}>
-            <IconSymbol name="note.text" size={20} color={AppColors.lightOrange} />
-            <ThemedText type="subtitle" style={styles.sectionTitle}>
-              My Notes
-            </ThemedText>
-          </View>
-          <Pressable
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setNotesModalVisible(true);
-            }}
-            accessibilityRole="button"
-            accessibilityLabel={currentNotes ? "Edit personal note" : "Add personal note"}
-            style={({ pressed }) => [
-              styles.inlineNoteInput,
-              {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-                opacity: pressed ? 0.9 : 1,
-                minHeight: 56,
-                justifyContent: "center",
-              },
-            ]}
-          >
-            {currentNotes ? (
-              <ThemedText style={{ color: colors.text }}>{currentNotes}</ThemedText>
-            ) : (
-              <ThemedText style={{ color: colors.textSecondary }}>
-                Tap to add a private note (e.g. &quot;get the fish tacos&quot;)
-              </ThemedText>
-            )}
-          </Pressable>
-        </View>
-
-        {/* Community Tips — full modal with suggestions */}
-        <PublicNotesSection
-          restaurantName={restaurant.name}
-          latitude={restaurant.latitude}
-          longitude={restaurant.longitude}
-          parentScrollRef={scrollViewRef}
-        />
 
         {/* Ratings Breakdown — shows actual scraper sources (Google / Foursquare / HERE) */}
         {(restaurant.ratings?.google || restaurant.ratings?.foursquare || restaurant.ratings?.here) && (
@@ -964,6 +995,9 @@ const styles = StyleSheet.create({
   backHeaderButton: {
     left: Spacing.md,
   },
+  notesHeaderButton: {
+    right: Spacing.md + 104,
+  },
   shareHeaderButton: {
     right: Spacing.md + 52,
   },
@@ -1063,6 +1097,28 @@ const styles = StyleSheet.create({
   sectionTitle: {
     marginBottom: Spacing.sm,
     marginLeft: Spacing.xs,
+  },
+  sectionSubtitle: {
+    fontSize: 12,
+    marginBottom: Spacing.sm,
+    marginTop: -4,
+  },
+  personalNotesSection: {
+    borderLeftWidth: 4,
+    borderLeftColor: AppColors.warning,
+  },
+  privatePill: {
+    marginLeft: "auto",
+    height: 20,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  privatePillText: {
+    color: AppColors.white,
+    fontSize: 11,
+    fontWeight: "700",
   },
   inlineNoteInput: {
     borderWidth: 1,

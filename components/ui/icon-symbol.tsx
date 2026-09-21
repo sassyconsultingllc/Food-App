@@ -70,7 +70,36 @@ const MAPPING = {
   
   // Menu & Ordering icons
   "doc.text.fill": "description",
+  "doc.text": "description",
+  "doc.text.magnifyingglass": "find-in-page",
+  "doc.richtext": "picture-as-pdf",
   "car.fill": "directions-car",
+  "safari.fill": "open-in-browser",
+  "camera.fill": "photo-camera",
+  "photo.badge.plus": "add-a-photo",
+
+  // Notes & community
+  "note.text": "notes",
+  "person.circle": "account-circle",
+  "person.fill": "person",
+  "person": "person-outline",
+  "bubble.left.and.bubble.right.fill": "forum",
+  "bubble.left": "chat-bubble-outline",
+  "plus.bubble.fill": "add-comment",
+  "lock.fill": "lock",
+  "lock.shield.fill": "security",
+  "star.circle.fill": "stars",
+  "map.fill": "map",
+
+  // Misc used across settings / browse / spinner
+  "arrow.clockwise": "refresh",
+  "arrow.counterclockwise": "refresh",
+  "arrow.up.right.square": "open-in-new",
+  "xmark.circle.fill": "cancel",
+  "key.fill": "vpn-key",
+  "line.3.horizontal.decrease": "filter-list",
+  "clock.arrow.circlepath": "history",
+  "slider.horizontal.3": "tune",
   
   // Theme icons
   "sun.max.fill": "light-mode",

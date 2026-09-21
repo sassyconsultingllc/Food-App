@@ -38,6 +38,31 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const MENU_PHOTO_WIDTH = SCREEN_WIDTH * 0.75;
 const MENU_PHOTO_HEIGHT = MENU_PHOTO_WIDTH * 1.3; // Menu aspect ratio (taller)
 
+function isSafeExternalUrl(url: string | null | undefined): url is string {
+  if (!url || typeof url !== "string") return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+async function openMenuUrl(url: string): Promise<void> {
+  if (!isSafeExternalUrl(url)) {
+    Alert.alert(
+      "Can't open this link",
+      "The menu link looks invalid or uses a scheme we don't support."
+    );
+    return;
+  }
+  try {
+    await Linking.openURL(url);
+  } catch {
+    Alert.alert("Couldn't open link", "Your device couldn't open this menu link.");
+  }
+}
+
 interface MenuSectionProps {
   restaurantId: string;
   restaurantName: string;
@@ -401,6 +426,36 @@ export function MenuSection({
         <ThemedText type="subtitle" style={styles.sectionTitle}>Menu</ThemedText>
       </View>
 
+      {/* Spec: if the restaurant has a menu URL, show View Full Menu at the
+          TOP of the section — before photos — so it's the first thing you tap. */}
+      {resolvedMenuUrl ? (
+        <Pressable
+          onPress={() => openMenuUrl(resolvedMenuUrl)}
+          accessibilityRole="link"
+          accessibilityLabel={discovery?.isPdf ? "Open menu PDF" : "View full menu"}
+          style={[styles.viewMenuButton, { backgroundColor: colors.accent, marginBottom: Spacing.sm }]}
+        >
+          <IconSymbol
+            name={discovery?.isPdf ? "doc.richtext" : "doc.text.fill"}
+            size={18}
+            color={AppColors.white}
+          />
+          <ThemedText style={styles.viewMenuText}>
+            {discovery?.isPdf ? "Open Menu PDF" : "View Full Menu"}
+          </ThemedText>
+        </Pressable>
+      ) : fallbackUrl ? (
+        <Pressable
+          onPress={() => openMenuUrl(fallbackUrl)}
+          accessibilityRole="link"
+          accessibilityLabel="View full menu"
+          style={[styles.viewMenuButton, { backgroundColor: colors.accent, marginBottom: Spacing.sm }]}
+        >
+          <IconSymbol name="doc.text.fill" size={18} color={AppColors.white} />
+          <ThemedText style={styles.viewMenuText}>View Full Menu</ThemedText>
+        </Pressable>
+      ) : null}
+
       {/* Searching state — classifier still running, no photos yet */}
       {isSearching && (
         <View style={[styles.searchingBox, { borderColor: colors.border, backgroundColor: colors.surface }]}>
@@ -450,15 +505,14 @@ export function MenuSection({
 
       {/* Action Buttons */}
       <View style={styles.menuActions}>
-        {/* Primary CTA. Priority:
-            1. Photos in-app → "View Full Menu (N pages)" → in-app viewer.
-            2. Discovered PDF → "Open Menu PDF" → external opener.
-            3. Discovered /menu page → "View Menu Page" → external opener.
-            4. Just the homepage → "Visit Website" — honest fallback so
-               users aren't told "View Menu" while we open the homepage. */}
-        {allMenuPhotos.length > 0 ? (
+        {/* In-app photo viewer — only when we have pages AND didn't already
+            put a URL CTA at the top. If both exist, tapping a photo still
+            opens the viewer. */}
+        {allMenuPhotos.length > 0 && !actionUrl ? (
           <Pressable
             onPress={() => openFullscreen(0)}
+            accessibilityRole="button"
+            accessibilityLabel={`View full menu, ${allMenuPhotos.length} pages`}
             style={[styles.viewMenuButton, { backgroundColor: colors.accent }]}
           >
             <IconSymbol name="doc.text.magnifyingglass" size={18} color={AppColors.white} />
@@ -466,35 +520,9 @@ export function MenuSection({
               View Full Menu ({allMenuPhotos.length} {allMenuPhotos.length === 1 ? "page" : "pages"})
             </ThemedText>
           </Pressable>
-        ) : resolvedMenuUrl && discovery?.isPdf ? (
-          <Pressable
-            onPress={() => Linking.openURL(resolvedMenuUrl)}
-            style={[styles.viewMenuButton, { backgroundColor: colors.accent }]}
-          >
-            <IconSymbol name="doc.richtext" size={18} color={AppColors.white} />
-            <ThemedText style={styles.viewMenuText}>Open Menu PDF</ThemedText>
-          </Pressable>
-        ) : resolvedMenuUrl ? (
-          <Pressable
-            onPress={() => Linking.openURL(resolvedMenuUrl)}
-            style={[styles.viewMenuButton, { backgroundColor: colors.accent }]}
-          >
-            <IconSymbol name="doc.text.fill" size={18} color={AppColors.white} />
-            <ThemedText style={styles.viewMenuText}>View Menu Page</ThemedText>
-          </Pressable>
-        ) : fallbackUrl ? (
-          <Pressable
-            onPress={() => Linking.openURL(fallbackUrl)}
-            style={[styles.viewMenuButton, { backgroundColor: colors.accent }]}
-          >
-            <IconSymbol name="safari.fill" size={18} color={AppColors.white} />
-            <ThemedText style={styles.viewMenuText}>Visit Website</ThemedText>
-          </Pressable>
-        ) : !isSearching ? (
+        ) : !actionUrl && !isSearching ? (
           // No photos, no discovered menu, no website fallback — prompt
-          // the user to be the first to upload a menu photo. Without this
-          // the section would just show bare Upload/Camera buttons with
-          // no context.
+          // the user to be the first to upload a menu photo.
           <View style={[styles.emptyHint, { borderColor: colors.border, backgroundColor: colors.surface }]}>
             <IconSymbol name="doc.text" size={20} color={colors.textSecondary} />
             <ThemedText style={[styles.emptyHintText, { color: colors.textSecondary }]}>
@@ -507,6 +535,8 @@ export function MenuSection({
           <Pressable
             onPress={handleUploadPhoto}
             disabled={uploading}
+            accessibilityRole="button"
+            accessibilityLabel="Upload a menu photo"
             style={({ pressed }) => [
               styles.halfButton,
               { borderColor: colors.accent, opacity: pressed ? 0.85 : 1 },
@@ -526,6 +556,8 @@ export function MenuSection({
           <Pressable
             onPress={handleTakePhoto}
             disabled={uploading}
+            accessibilityRole="button"
+            accessibilityLabel="Take a menu photo with the camera"
             style={({ pressed }) => [
               styles.halfButton,
               { borderColor: colors.accent, opacity: pressed ? 0.85 : 1 },

@@ -9,7 +9,7 @@
  */
 
 import { Image } from "expo-image";
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useMemo } from "react";
 import {
   Dimensions,
   FlatList,
@@ -47,6 +47,13 @@ export function PhotoCarousel({ photos, restaurantName }: PhotoCarouselProps) {
   const flatListRef = useRef<FlatList>(null);
   const fullscreenListRef = useRef<FlatList>(null);
 
+  // Search + merge can repeat the same photo_reference. Dedup so the
+  // carousel never shows one image three times (CLAUDE.md Bug 1).
+  const uniquePhotos = useMemo(
+    () => Array.from(new Set((photos || []).filter(Boolean))),
+    [photos]
+  );
+
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
       if (viewableItems.length > 0 && viewableItems[0].index !== null) {
@@ -82,7 +89,11 @@ export function PhotoCarousel({ photos, restaurantName }: PhotoCarouselProps) {
     setFullscreenVisible(false);
   };
 
-  if (!photos || photos.length === 0) {
+  const lastPhotoIndex = Math.max(0, uniquePhotos.length - 1);
+  const safeActiveIndex = Math.min(activeIndex, lastPhotoIndex);
+  const safeFullscreenIndex = Math.min(fullscreenIndex, lastPhotoIndex);
+
+  if (uniquePhotos.length === 0) {
     return (
       <View style={[styles.emptyContainer, { backgroundColor: colors.surface }]}>
         <IconSymbol name="photo.fill" size={32} color={colors.textSecondary} />
@@ -99,7 +110,7 @@ export function PhotoCarousel({ photos, restaurantName }: PhotoCarouselProps) {
     <Pressable
       onPress={() => openFullscreen(index)}
       accessibilityRole="imagebutton"
-      accessibilityLabel={`Photo ${index + 1} of ${photos.length}. Tap to enlarge.`}
+      accessibilityLabel={`Photo ${index + 1} of ${uniquePhotos.length}. Tap to enlarge.`}
     >
       <Image
         source={{ uri: item }}
@@ -127,7 +138,7 @@ export function PhotoCarousel({ photos, restaurantName }: PhotoCarouselProps) {
         transition={200}
         recyclingKey={item}
         cachePolicy="memory-disk"
-        accessibilityLabel={`Photo ${index + 1} of ${photos.length}`}
+        accessibilityLabel={`Photo ${index + 1} of ${uniquePhotos.length}`}
       />
     </View>
   );
@@ -137,7 +148,7 @@ export function PhotoCarousel({ photos, restaurantName }: PhotoCarouselProps) {
       {/* Photo Carousel */}
       <FlatList
         ref={flatListRef}
-        data={photos}
+        data={uniquePhotos}
         renderItem={renderPhoto}
         // Use the photo URL as the key. Index-based keys cause React to
         // recycle the wrong Image instance when the photos array changes
@@ -155,17 +166,17 @@ export function PhotoCarousel({ photos, restaurantName }: PhotoCarouselProps) {
       />
 
       {/* Pagination Dots */}
-      {photos.length > 1 && (
+      {uniquePhotos.length > 1 && (
         <View style={styles.paginationContainer}>
-          {photos.map((_, index) => (
+          {uniquePhotos.map((_, index) => (
             <View
               key={index}
               style={[
                 styles.dot,
                 {
                   backgroundColor:
-                    index === activeIndex ? colors.accent : colors.border,
-                  width: index === activeIndex ? 20 : 8,
+                    index === safeActiveIndex ? colors.accent : colors.border,
+                  width: index === safeActiveIndex ? 20 : 8,
                 },
               ]}
             />
@@ -177,7 +188,7 @@ export function PhotoCarousel({ photos, restaurantName }: PhotoCarouselProps) {
       <View style={[styles.countBadge, { backgroundColor: "rgba(0,0,0,0.6)" }]}>
         <IconSymbol name="photo.fill" size={12} color={AppColors.white} />
         <ThemedText style={styles.countText}>
-          {activeIndex + 1}/{photos.length}
+          {safeActiveIndex + 1}/{uniquePhotos.length}
         </ThemedText>
       </View>
 
@@ -202,13 +213,13 @@ export function PhotoCarousel({ photos, restaurantName }: PhotoCarouselProps) {
           {/* Fullscreen Photos */}
           <FlatList
             ref={fullscreenListRef}
-            data={photos}
+            data={uniquePhotos}
             renderItem={renderFullscreenPhoto}
             keyExtractor={(item, index) => item ? `fullscreen-${item}` : `fullscreen-${index}`}
             horizontal
             pagingEnabled
             showsHorizontalScrollIndicator={false}
-            initialScrollIndex={fullscreenIndex}
+            initialScrollIndex={safeFullscreenIndex}
             getItemLayout={(_, index) => ({
               length: SCREEN_WIDTH,
               offset: SCREEN_WIDTH * index,
@@ -221,7 +232,7 @@ export function PhotoCarousel({ photos, restaurantName }: PhotoCarouselProps) {
           {/* Fullscreen Pagination */}
           <View style={[styles.fullscreenPagination, { paddingBottom: insets.bottom + Spacing.md }]}>
             <ThemedText style={styles.fullscreenPaginationText}>
-              {fullscreenIndex + 1} of {photos.length}
+              {safeFullscreenIndex + 1} of {uniquePhotos.length}
             </ThemedText>
           </View>
         </View>

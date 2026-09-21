@@ -640,8 +640,8 @@ async function enrichGooglePlace(place: any, apiKey: string) {
       if (comp.types.includes('postal_code')) zipCode = comp.long_name;
     }
 
-    // Build photo URLs from details (up to 20)
-    const photos = (d.photos || []).slice(0, 20).map((p: any) =>
+    // Build photo URLs from details (up to 10 — CLAUDE.md Bug 1 cost cap)
+    const photos = (d.photos || []).slice(0, 10).map((p: any) =>
       `/api/photo?ref=${encodeURIComponent(p.photo_reference)}&maxwidth=800`
     );
 

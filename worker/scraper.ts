@@ -439,7 +439,9 @@ async function fetchGooglePlaceDetails(
     const data = await res.json() as any;
     const d = data.result;
     if (!d) return null;
-    const photos = (d.photos || []).slice(0, 20).map((p: any) =>
+    // Cap at 10 photo refs (CLAUDE.md Bug 1) so later /api/photo proxy
+    // hits stay bounded. Place Details itself is one billed call either way.
+    const photos = (d.photos || []).slice(0, 10).map((p: any) =>
       `/api/photo?ref=${encodeURIComponent(p.photo_reference)}&maxwidth=800`
     );
     const website = d.website || '';
