@@ -13,6 +13,16 @@ The **Privacy Policy** linked from every release: <https://sassyconsultingllc.co
 The **Terms of Service** linked from every release: <https://sassyconsultingllc.com/privacy/foodie-finder/terms>
 
 
+## 1.0.5 (vc29) - 2026-09-21
+
+- Restaurant pages now show every unique photo Google has, instead of
+  repeating the same shot.
+- The menu sits right under the photos, with a clear "View Full Menu"
+  button when the restaurant publishes one.
+- Personal notes are on the restaurant page (private, this device only).
+- Community tips warn before posting a phone number or email, and sit
+  in their own shared section below your notes.
+
 ## 1.0.4 (vc28) - 2026-08-12
 
 - Updating the app now clears cached restaurant data automatically, so a
