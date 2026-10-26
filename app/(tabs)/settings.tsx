@@ -116,10 +116,14 @@ export default function SettingsScreen() {
       return;
     }
 
+    // A typed zip has no known country; keep the GPS country only if the
+    // zip itself didn't change (the Worker falls back to the phone's country).
+    const zipChanged = zipCode.trim() !== (preferences.defaultZipCode || "");
     await savePreferences({
       defaultZipCode: zipCode.trim(),
       defaultPostalCode: zipCode.trim(),
       defaultRadius: radiusNum,
+      defaultCountryCode: zipChanged ? undefined : preferences.defaultCountryCode,
     });
 
     if (zipCode.trim()) {

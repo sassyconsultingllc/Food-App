@@ -169,7 +169,7 @@ export default function BrowseScreen() {
 
   // Distance reference: active search area first, GPS only as fallback.
   const searchCenterCoords = useSearchCenterCoords(allRestaurants, zipCode, {
-    countryCode: preferences.defaultCountryCode,
+    countryCode: currentSearchParams.countryCode,
     gpsCoords,
     trustRestaurants: !isFetching,
   });

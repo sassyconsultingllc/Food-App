@@ -16,12 +16,13 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import { z } from "zod";
 import superjson from "superjson";
 import type { Env } from "./context";
-import { scrapeRestaurants, fetchCulversFlavor } from "./scraper";
+import { scrapeRestaurants, fetchCulversFlavor, getCoords } from "./scraper";
 import { initCacheTables, isPostalCodeCached, getCachedRestaurants, cacheRestaurants, getCacheStats } from "./cache";
 import { semanticSearch, findSimilar, indexRestaurants, getIndexStats, recommendFromFavorites } from "./vector-search";
 import { RestaurantEmbeddingInput } from "./embeddings";
 import { guardPublicNote, checkNoteRateLimit } from "./content-guard";
 import { computeBucketId } from "./restaurant-bucket";
+import { requestCountry } from "./request-country";
 import type { KVNamespace } from "@cloudflare/workers-types";
 
 interface Context {
@@ -218,12 +219,6 @@ export const appRouter = router({
           }
         }
 
-        // Cache key includes radius + unit so a user searching the same
-        // ZIP at a wider radius doesn't get served an older, narrower cache.
-        // Previously "${zip}:${cc}" collided across radii and returned
-        // stale/undersized result sets to anyone who bumped their radius.
-        const cacheKey = `${postalCode}:${countryCode || ""}:${radius}${radiusUnit}`;
-
         if (db) {
           try {
             await ensureCacheTables(db);
@@ -231,6 +226,43 @@ export const appRouter = router({
             console.warn("[Router] Cache init failed:", e);
           }
         }
+
+        // Postal codes collide across countries (10178 is Berlin and a US
+        // ZIP; 110 is Taipei and Iceland), and app builds up to 1.0.5 vc31
+        // never send countryCode. Without one, getCoords() tries 5-digit
+        // codes as US ZIPs first, which sent Mexico City, Berlin, Kyiv,
+        // Istanbul, Riyadh, Jakarta, Kuala Lumpur and others to the wrong
+        // continent. So when the caller gives no country, use the country
+        // the request came from, as long as the code exists there; if it
+        // doesn't (someone searching another country's code), fall back to
+        // the old global lookup. getCoords caches, so the probe is reused by the
+        // scrape below.
+        let effectiveCountryCode = countryCode;
+        if (!effectiveCountryCode) {
+          const inferred = requestCountry(ctx.req);
+          if (inferred) {
+            // A cached entry under the inferred country proves the code
+            // exists there, and avoids a Nominatim call on every cache hit.
+            const inferredKey = `${postalCode}:${inferred}:${radius}${radiusUnit}`;
+            const cachedThere = db ? await isPostalCodeCached(db, inferredKey).catch(() => false) : false;
+            if (cachedThere) {
+              effectiveCountryCode = inferred;
+            } else {
+              const probe = await getCoords(postalCode, inferred);
+              if (probe.lat !== 0 || probe.lng !== 0) {
+                effectiveCountryCode = inferred;
+              }
+            }
+          }
+        }
+
+        // Cache key includes radius + unit so a user searching the same
+        // ZIP at a wider radius doesn't get served an older, narrower cache.
+        // Previously "${zip}:${cc}" collided across radii and returned
+        // stale/undersized result sets to anyone who bumped their radius.
+        // It uses the effective country, so results cached under the old
+        // country-less key (possibly from the wrong country) aren't reused.
+        const cacheKey = `${postalCode}:${effectiveCountryCode || ""}:${radius}${radiusUnit}`;
 
         if (db && !forceRefresh) {
           const isCached = await isPostalCodeCached(db, cacheKey);
@@ -270,14 +302,6 @@ export const appRouter = router({
         }
         
         console.log(`[Router] Cache miss for ${cacheKey}, fetching from APIs`);
-        
-        // Do NOT auto-guess US from a 5-digit postal code — that collides
-        // with Berlin (10115), Paris (75001), Rome (00184), Istanbul (34000),
-        // Mexico City (06000), and many other non-US postal codes, and ships
-        // users to Brooklyn when they meant Europe. If the caller didn't
-        // supply countryCode, leave it unset and let Nominatim pick the best
-        // global match.
-        const effectiveCountryCode = countryCode;
         
         let restaurants = await scrapeRestaurants({
           postalCode,

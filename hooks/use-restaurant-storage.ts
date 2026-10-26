@@ -193,7 +193,11 @@ export function useRestaurantStorage() {
           const savedZip = loadedPrefs.defaultZipCode || loadedPrefs.defaultPostalCode || "";
           const savedRadius = loadedPrefs.defaultRadius || 10;
           if (savedZip) {
-            setCurrentSearchParams({ zipCode: savedZip, radius: savedRadius });
+            setCurrentSearchParams({
+              zipCode: savedZip,
+              radius: savedRadius,
+              countryCode: loadedPrefs.defaultCountryCode ?? null,
+            });
           }
           initialSyncDone.current = true;
         }
@@ -211,6 +215,7 @@ export function useRestaurantStorage() {
   const searchQuery = trpc.restaurant.search.useQuery(
     {
       postalCode: currentSearchParams.zipCode,
+      countryCode: currentSearchParams.countryCode,
       radius: currentSearchParams.radius,
       limit: 50,
     },
@@ -343,13 +348,15 @@ export function useRestaurantStorage() {
 
   // Search restaurants with new ZIP code/radius (triggers immediate API call).
   // Also persists location to preferences so Home, Browse, and Settings stay in sync.
+  // countryCode: pass the GPS country with a GPS-derived zip; omit it for a
+  // typed zip (a new zip then drops the old country, the same zip keeps it).
   const searchWithNewParams = useCallback(async (
     zipCode: string,
     radius: number,
-    options?: { persist?: boolean }
+    options?: { persist?: boolean; countryCode?: string | null }
   ) => {
     setRestaurantsError(null);
-    setCurrentSearchParams({ zipCode, radius });
+    setCurrentSearchParams({ zipCode, radius, countryCode: options?.countryCode });
 
     if (options?.persist === false) return;
 
@@ -357,15 +364,22 @@ export function useRestaurantStorage() {
     if (!zip) return;
 
     const prev = preferencesRef.current;
+    const countryCode =
+      options?.countryCode === null
+        ? undefined
+        : options?.countryCode ??
+          (prev.defaultZipCode === zip ? prev.defaultCountryCode : undefined);
     const locationChanged =
       prev.defaultZipCode !== zip ||
       prev.defaultPostalCode !== zip ||
-      prev.defaultRadius !== radius;
+      prev.defaultRadius !== radius ||
+      prev.defaultCountryCode !== countryCode;
     if (locationChanged) {
       await savePreferences({
         defaultZipCode: zip,
         defaultPostalCode: zip,
         defaultRadius: radius,
+        defaultCountryCode: countryCode,
       });
     }
   }, [setCurrentSearchParams, savePreferences]);

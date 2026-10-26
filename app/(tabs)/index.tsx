@@ -155,10 +155,9 @@ export default function HomeScreen() {
       clearTimeout(searchDebounceRef.current);
       searchDebounceRef.current = null;
     }
-    searchWithNewParams(locationZipCode, radius);
-    if (locationCountryCode) {
-      savePreferences({ defaultCountryCode: locationCountryCode });
-    }
+    // The GPS country travels with the zip so the Worker searches the
+    // right country (postal codes collide: 10178 is Berlin and a US ZIP).
+    searchWithNewParams(locationZipCode, radius, { countryCode: locationCountryCode ?? null });
   }, [
     city,
     locationState,
@@ -167,7 +166,6 @@ export default function HomeScreen() {
     locationLoading,
     locationError,
     radius,
-    savePreferences,
     searchWithNewParams,
   ]);
 

@@ -14,11 +14,25 @@ import React, { createContext, useContext, useState, useCallback } from "react";
 interface SearchParams {
   zipCode: string;
   radius: number;
+  /**
+   * ISO country of `zipCode` when known (from GPS). Postal codes collide
+   * across countries (10178 is Berlin and a US ZIP), so the Worker needs it.
+   * Unset for a typed code: the Worker then uses the country the phone's
+   * request comes from.
+   */
+  countryCode?: string;
+}
+
+interface SetSearchParams {
+  zipCode: string;
+  radius: number;
+  /** A country, null to clear it, or omitted: keep it for the same zip, drop it for a new one. */
+  countryCode?: string | null;
 }
 
 interface RestaurantSearchContextValue {
   currentSearchParams: SearchParams;
-  setCurrentSearchParams: (params: SearchParams) => void;
+  setCurrentSearchParams: (params: SetSearchParams) => void;
 }
 
 const RestaurantSearchContext = createContext<RestaurantSearchContextValue | null>(null);
@@ -29,8 +43,15 @@ export function RestaurantSearchProvider({ children }: { children: React.ReactNo
     radius: 10,
   });
 
-  const setCurrentSearchParams = useCallback((params: SearchParams) => {
-    setCurrentSearchParamsState(params);
+  const setCurrentSearchParams = useCallback((params: SetSearchParams) => {
+    setCurrentSearchParamsState((prev) => {
+      const sameZip = prev.zipCode.trim() === params.zipCode.trim();
+      const countryCode =
+        params.countryCode === null
+          ? undefined
+          : params.countryCode ?? (sameZip ? prev.countryCode : undefined);
+      return { zipCode: params.zipCode, radius: params.radius, countryCode };
+    });
   }, []);
 
   return (
