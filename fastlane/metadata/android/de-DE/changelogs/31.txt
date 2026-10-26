@@ -1,0 +1,6 @@
+Restaurantseiten zeigen jetzt alle Fotos, statt dasselbe zu wiederholen.
+Die Speisekarte steht direkt unter den Fotos, mit „View Full Menu“-Schaltfläche, falls vorhanden.
+Private Notizen findest du auf der Restaurantseite.
+Community-Tipps warnen, bevor du eine Telefonnummer oder E-Mail-Adresse veröffentlichst.
+„Use My Location“ funktioniert jetzt immer, und ein auf einem Bildschirm geänderter Ort gilt überall.
+Favoriten und Notizen bleiben auf allen Tabs synchron.

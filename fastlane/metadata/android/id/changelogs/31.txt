@@ -1,0 +1,6 @@
+Halaman restoran kini menampilkan semua foto yang berbeda, bukan mengulang foto yang sama.
+Menu ada tepat di bawah foto, dengan tombol "View Full Menu" jika tersedia.
+Catatan pribadi yang hanya bisa kamu lihat ada di halaman restoran.
+Tips komunitas memberi peringatan sebelum kamu memposting nomor telepon atau email.
+"Use My Location" kini selalu berfungsi, dan lokasi yang diubah di layar mana pun dipakai untuk pencarian di semua layar.
+Favorit dan catatan pribadi tetap tersinkron di semua tab.

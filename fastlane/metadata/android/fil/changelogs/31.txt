@@ -1,0 +1,6 @@
+Ipinapakita na ng mga page ng restaurant ang lahat ng larawan, hindi na iisa nang paulit-ulit.
+Nasa ilalim ng mga larawan ang menu, may button na "View Full Menu" kapag mayroon.
+Nasa page ng restaurant ang mga pribadong tala.
+Nagbababala ang mga community tip bago ka mag-post ng numero ng telepono o email.
+Laging gumagana na ang "Use My Location", at ang lokasyong pinili sa anumang screen ay para sa lahat ng screen.
+Naka-sync ang mga paborito at tala sa bawat tab.

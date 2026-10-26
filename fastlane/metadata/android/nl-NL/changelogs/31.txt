@@ -1,0 +1,6 @@
+Restaurantpagina's tonen nu alle foto's in plaats van steeds dezelfde.
+Het menu staat direct onder de foto's, met een knop "View Full Menu" als die er is.
+Privénotities staan op de restaurantpagina.
+Communitytips waarschuwen voordat je een telefoonnummer of e-mailadres plaatst.
+"Use My Location" werkt nu altijd, en een locatie die je op één scherm kiest, geldt overal.
+Favorieten en notities blijven op alle tabbladen gesynchroniseerd.

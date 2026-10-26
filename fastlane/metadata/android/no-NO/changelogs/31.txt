@@ -1,0 +1,6 @@
+Restaurantsidene viser nå alle unike bilder i stedet for å gjenta det samme.
+Menyen ligger rett under bildene, med en «View Full Menu»-knapp når den finnes.
+Private personlige notater er på restaurantsiden.
+Fellesskapstips advarer før du legger ut et telefonnummer eller en e-postadresse.
+«Use My Location» fungerer nå alltid, og et sted du endrer på hvilken som helst skjerm, er det alle skjermene søker i.
+Favoritter og personlige notater holdes synkronisert på tvers av alle faner.

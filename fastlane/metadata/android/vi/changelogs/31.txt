@@ -1,0 +1,6 @@
+Trang nhà hàng giờ hiển thị mọi ảnh khác nhau thay vì lặp lại cùng một ảnh.
+Thực đơn nằm ngay dưới ảnh, kèm nút "View Full Menu" khi có.
+Ghi chú cá nhân riêng tư nằm trên trang nhà hàng.
+Mẹo cộng đồng sẽ cảnh báo trước khi bạn đăng số điện thoại hoặc email.
+"Use My Location" giờ luôn hoạt động, và vị trí bạn đổi ở bất kỳ màn hình nào sẽ được dùng để tìm kiếm trên mọi màn hình.
+Mục yêu thích và ghi chú cá nhân luôn đồng bộ giữa các tab.

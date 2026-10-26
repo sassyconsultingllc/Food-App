@@ -1,0 +1,6 @@
+Restaurangsidor visar nu alla unika foton i stället för att upprepa samma bild.
+Menyn ligger direkt under fotona, med en "View Full Menu"-knapp när den finns.
+Privata personliga anteckningar finns på restaurangsidan.
+Communitytips varnar innan du publicerar ett telefonnummer eller en e-postadress.
+"Use My Location" fungerar nu alltid, och en plats du ändrar på valfri skärm är den som alla skärmar söker i.
+Favoriter och personliga anteckningar hålls synkade på alla flikar.
