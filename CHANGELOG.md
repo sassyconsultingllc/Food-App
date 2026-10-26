@@ -13,7 +13,11 @@ The **Privacy Policy** linked from every release: <https://sassyconsultingllc.co
 The **Terms of Service** linked from every release: <https://sassyconsultingllc.com/privacy/foodie-finder/terms>
 
 
-## 1.0.5 (vc30) - 2026-10-26
+## 1.0.5 (vc31) - 2026-10-26
+
+<!-- vc30 was built on 2026-09-24 from ff8ee7d (the photos/menu/notes items
+     below, without the location, favorites and notes-sync fixes) and was
+     superseded by vc31 before reaching Play. 30.txt keeps its notes. -->
 
 - "Use My Location" works every time. It used to do nothing once any
   zip had been saved, which was after your first search.
