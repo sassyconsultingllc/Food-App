@@ -353,7 +353,7 @@ function FilterModal({
               Exclude Recently Picked
             </ThemedText>
             <ThemedText style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
-              Skip restaurants you've spun recently
+              Skip restaurants you&apos;ve spun recently
             </ThemedText>
             <View style={styles.optionGrid}>
               {EXCLUDE_OPTIONS.map((option) => (

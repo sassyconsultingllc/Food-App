@@ -424,7 +424,7 @@ export default function RestaurantDetailScreen() {
             <View style={styles.sectionHeader}>
               <IconSymbol name="sparkles" size={20} color={AppColors.lightOrange} />
               <ThemedText type="subtitle" style={styles.sectionTitle}>
-                Today's Special
+                Today&apos;s Special
               </ThemedText>
             </View>
             <ThemedText type="defaultSemiBold" style={styles.specialTitle}>

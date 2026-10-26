@@ -107,8 +107,8 @@ export function PaywallModal({
 
             {mode === "evaluation" ? (
               <ThemedText style={[styles.subhead, { color: colors.textSecondary }]}>
-                You're currently using the free evaluation build — every
-                feature is unlocked. When Pro launches, here's what you'll
+                You&apos;re currently using the free evaluation build — every
+                feature is unlocked. When Pro launches, here&apos;s what you&apos;ll
                 keep:
               </ThemedText>
             ) : (

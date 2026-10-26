@@ -87,7 +87,7 @@ export function CulversFlavorCalendar({ zipCode, compact = false }: CulversFlavo
       <View style={[styles.container, styles.loading, { backgroundColor: colors.cardBackground }]}>
         <ActivityIndicator color={colors.accent} />
         <ThemedText style={[styles.loadingText, { color: colors.textSecondary }]}>
-          Finding your Culver's...
+          Finding your Culver&apos;s...
         </ThemedText>
       </View>
     );
@@ -101,7 +101,7 @@ export function CulversFlavorCalendar({ zipCode, compact = false }: CulversFlavo
       >
         <IconSymbol name="exclamationmark.circle" size={24} color={colors.textSecondary} />
         <ThemedText style={[styles.errorText, { color: colors.textSecondary }]}>
-          No Culver's found nearby
+          No Culver&apos;s found nearby
         </ThemedText>
         <ThemedText style={[styles.tapText, { color: colors.accent }]}>
           Tap to check online
@@ -122,7 +122,7 @@ export function CulversFlavorCalendar({ zipCode, compact = false }: CulversFlavo
           </View>
           <View style={styles.compactInfo}>
             <ThemedText style={[styles.compactLabel, { color: colors.textSecondary }]}>
-              Today's Flavor
+              Today&apos;s Flavor
             </ThemedText>
             <ThemedText type="defaultSemiBold" numberOfLines={1}>
               {data.flavor}
@@ -145,7 +145,7 @@ export function CulversFlavorCalendar({ zipCode, compact = false }: CulversFlavo
             <ThemedText style={styles.logoText}>C</ThemedText>
           </View>
           <View>
-            <ThemedText type="defaultSemiBold">Culver's</ThemedText>
+            <ThemedText type="defaultSemiBold">Culver&apos;s</ThemedText>
             <ThemedText style={[styles.locationText, { color: colors.textSecondary }]} numberOfLines={1}>
               {data.locationName || "Nearest Location"}
             </ThemedText>
@@ -161,7 +161,7 @@ export function CulversFlavorCalendar({ zipCode, compact = false }: CulversFlavo
         <View style={styles.todayHeader}>
           <IconSymbol name="star.fill" size={16} color={colors.accent} />
           <ThemedText style={[styles.todayLabel, { color: colors.accent }]}>
-            Today's Flavor of the Day
+            Today&apos;s Flavor of the Day
           </ThemedText>
         </View>
         <View style={styles.todayContent}>
@@ -250,7 +250,7 @@ export function CulversFlavorWidget({ zipCode }: { zipCode: string }) {
       <ThemedText style={styles.widgetEmoji}>{getFlavorEmoji(data.flavor)}</ThemedText>
       <View style={styles.widgetInfo}>
         <ThemedText style={[styles.widgetLabel, { color: colors.textSecondary }]}>
-          Culver's Today
+          Culver&apos;s Today
         </ThemedText>
         <ThemedText style={styles.widgetFlavor} numberOfLines={1}>
           {data.flavor}

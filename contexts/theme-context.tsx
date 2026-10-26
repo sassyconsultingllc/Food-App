@@ -78,6 +78,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * Like useTheme(), but returns undefined outside a ThemeProvider instead of
+ * throwing, so callers don't need a hook call inside try/catch.
+ */
+export function useOptionalTheme() {
+  return useContext(ThemeContext);
+}
+
 export function useTheme() {
   const context = useContext(ThemeContext);
   if (context === undefined) {

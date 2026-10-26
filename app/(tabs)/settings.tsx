@@ -380,7 +380,7 @@ export default function SettingsScreen() {
           <View style={styles.aboutDescription}>
             <ThemedText style={[styles.descriptionText, { color: colors.textSecondary }]}>
               Discover local restaurants with our fun random picker. View daily specials, 
-              Culver's Flavor of the Day, and aggregated ratings from multiple sources.
+              Culver&apos;s Flavor of the Day, and aggregated ratings from multiple sources.
             </ThemedText>
           </View>
 
@@ -395,7 +395,7 @@ export default function SettingsScreen() {
             </View>
             <View style={styles.featureItem}>
               <IconSymbol name="flame.fill" size={20} color={colors.accent} />
-              <ThemedText style={styles.featureText}>Culver's Flavor of the Day</ThemedText>
+              <ThemedText style={styles.featureText}>Culver&apos;s Flavor of the Day</ThemedText>
             </View>
             <View style={styles.featureItem}>
               <IconSymbol name="star.fill" size={20} color={colors.accent} />

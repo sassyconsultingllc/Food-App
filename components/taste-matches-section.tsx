@@ -42,6 +42,22 @@ export function TasteMatchesSection({
   const colors = Colors[colorScheme ?? "light"];
   const [activeTab, setActiveTab] = useState<Tab>("local");
 
+  // Memoize the per-card style objects so the Pressable's render-style
+  // function doesn't allocate a fresh `{backgroundColor, borderColor, ...}`
+  // object on every render (which prevents StyleSheet caching and creates
+  // unnecessary re-render churn on horizontal scroll). These must stay above
+  // the early return below: hooks after it would change the hook count when
+  // the user's first favorite appears, and React would throw.
+  const cardBaseStyle = useMemo(
+    () => ({
+      backgroundColor: colors.surface,
+      borderColor: colors.border,
+    }),
+    [colors.surface, colors.border]
+  );
+  const cardPressedOpacity = useMemo(() => ({ opacity: 0.9 }), []);
+  const cardIdleOpacity = useMemo(() => ({ opacity: 1 }), []);
+
   // Hide the section entirely if there's nothing to show and the user has
   // no favorites to anchor the taste profile.
   if (
@@ -54,20 +70,6 @@ export function TasteMatchesSection({
   const matches = activeTab === "local" ? localMatches : crossLocaleMatches;
   const otherHasResults =
     activeTab === "local" ? crossLocaleMatches.length > 0 : localMatches.length > 0;
-
-  // Memoize the per-card style objects so the Pressable's render-style
-  // function doesn't allocate a fresh `{backgroundColor, borderColor, ...}`
-  // object on every render (which prevents StyleSheet caching and creates
-  // unnecessary re-render churn on horizontal scroll).
-  const cardBaseStyle = useMemo(
-    () => ({
-      backgroundColor: colors.surface,
-      borderColor: colors.border,
-    }),
-    [colors.surface, colors.border]
-  );
-  const cardPressedOpacity = useMemo(() => ({ opacity: 0.9 }), []);
-  const cardIdleOpacity = useMemo(() => ({ opacity: 1 }), []);
 
   const handlePress = (id: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
