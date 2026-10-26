@@ -23,6 +23,9 @@ The **Terms of Service** linked from every release: <https://sassyconsultingllc.
   from another tab could put the old zip back.
 - If your location has no postal code, you're asked to type one instead
   of nothing happening.
+- A favorite added on one tab shows up on the Favorites tab right away,
+  and a personal note written on a restaurant page can no longer be
+  overwritten by an older copy when the app goes to the background.
 
 - Restaurant pages now show every unique photo Google has, instead of
   repeating the same shot.

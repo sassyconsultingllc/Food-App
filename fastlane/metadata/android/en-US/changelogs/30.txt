@@ -3,3 +3,4 @@ The menu sits right under the photos, with a "View Full Menu" button when availa
 Private personal notes are on the restaurant page.
 Community tips warn before posting a phone number or email.
 "Use My Location" always works now, and a location changed on any screen is the one every screen searches.
+Favorites and personal notes stay in sync across every tab.
