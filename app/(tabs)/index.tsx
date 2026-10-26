@@ -56,8 +56,12 @@ export default function HomeScreen() {
   const colors = Colors[colorScheme ?? "light"];
   const router = useRouter();
   const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
-  const lastPreferenceZipRef = useRef<string | null>(null);
-  const lastLocationZipRef = useRef<string | null>(null);
+  // Set when the user taps "Use My Location"; the GPS result is applied once
+  // and then cleared, so a saved zip can never swallow an explicit request.
+  const gpsRequestedRef = useRef(false);
+  // Pending debounced zip/radius search (declared up here so the
+  // context-sync effect below can tell typing apart from outside changes).
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Location hook
   const {
@@ -93,42 +97,26 @@ export default function HomeScreen() {
   const [zipCode, setZipCode] = useState("");
   const [radius, setRadius] = useState(5);
   
-  // Sync local UI from saved preferences on load or when Settings changes them.
+  // Mirror the active search into the inputs. The shared search context is
+  // the single source of truth: it is seeded from saved preferences and
+  // updated by Home, Browse and Settings, so whichever screen changed the
+  // location last, Home shows (and spins on) what is actually loaded.
+  // Skipped while the user is mid-typing so we don't overwrite their input.
   useEffect(() => {
-    const savedZip = preferences.defaultZipCode || preferences.defaultPostalCode || "";
-    const savedRadius = preferences.defaultRadius || 5;
-
-    if (!savedZip) return;
-
-    const preferenceZipChanged = lastPreferenceZipRef.current !== savedZip;
-
-    if (preferenceZipChanged || !zipCode) {
-      setZipCode(savedZip);
-      setRadius(savedRadius);
-    }
-
-    if (preferenceZipChanged) {
-      lastPreferenceZipRef.current = savedZip;
-      // Context may already be seeded on mount — avoid a duplicate search.
-      if (
-        currentSearchParams.zipCode !== savedZip ||
-        currentSearchParams.radius !== savedRadius
-      ) {
-        searchWithNewParams(savedZip, savedRadius, { persist: false });
-      }
-    }
-  }, [
-    preferences.defaultZipCode,
-    preferences.defaultPostalCode,
-    preferences.defaultRadius,
-    searchWithNewParams,
-    currentSearchParams.zipCode,
-    currentSearchParams.radius,
-  ]);
+    if (searchDebounceRef.current) return;
+    const activeZip = currentSearchParams.zipCode;
+    if (!activeZip) return;
+    // A GPS label ("Madison, WI") no longer describes a zip set elsewhere.
+    if (activeZip !== zipCode) setLocationName(null);
+    setZipCode(activeZip);
+    setRadius(currentSearchParams.radius || preferences.defaultRadius || 5);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSearchParams.zipCode, currentSearchParams.radius]);
   const [selectedRestaurant, setSelectedRestaurant] = useState<Restaurant | null>(null);
   const [isSpinning, setIsSpinning] = useState(false);
   const [hasSpun, setHasSpun] = useState(false);
   const [locationName, setLocationName] = useState<string | null>(null);
+  const [gpsNoPostalCode, setGpsNoPostalCode] = useState(false);
   const [filters, setFilters] = useState<SpinnerFilters>(DEFAULT_FILTERS);
   const [showCelebration, setShowCelebration] = useState(false);
   // Track the celebration timer so we can clear it on unmount and avoid
@@ -144,28 +132,30 @@ export default function HomeScreen() {
   }, []);
   const [showProfileModal, setShowProfileModal] = useState(false);
 
-  // React to GPS updates — only seeds the search if no saved preference zip exists
+  // Apply the GPS result once the request the user made has finished.
   useEffect(() => {
-    if (!locationZipCode || locationZipCode.length < 2 || locationLoading) return;
+    if (!gpsRequestedRef.current || locationLoading) return;
+    gpsRequestedRef.current = false;
+    if (locationError) return;
 
-    const locationZipChanged = lastLocationZipRef.current !== locationZipCode;
-    if (!locationZipChanged) return;
+    if (!locationZipCode || locationZipCode.length < 2) {
+      setLocationName(null);
+      setGpsNoPostalCode(true);
+      return;
+    }
 
-    // Don't override a zip the user already has saved
-    const hasSavedZip = !!(preferences.defaultZipCode || preferences.defaultPostalCode);
-    if (hasSavedZip) return;
-
-    lastLocationZipRef.current = locationZipCode;
+    setGpsNoPostalCode(false);
     setZipCode(locationZipCode);
     setLocationName(
       city && locationState ? `${city}, ${locationState}` : locationZipCode
     );
 
-    // Preserve the user's saved radius instead of clobbering it with the
-    // local component state (which is 5 by default). Only overwrite the
-    // radius if the user has no saved preference yet.
-    const savedRadius = preferences.defaultRadius ?? radius;
-    searchWithNewParams(locationZipCode, savedRadius);
+    // Keep the radius the user already has rather than resetting it.
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = null;
+    }
+    searchWithNewParams(locationZipCode, radius);
     if (locationCountryCode) {
       savePreferences({ defaultCountryCode: locationCountryCode });
     }
@@ -175,12 +165,10 @@ export default function HomeScreen() {
     locationZipCode,
     locationCountryCode,
     locationLoading,
+    locationError,
     radius,
     savePreferences,
     searchWithNewParams,
-    preferences.defaultZipCode,
-    preferences.defaultPostalCode,
-    preferences.defaultRadius,
   ]);
 
   // Animation values
@@ -236,6 +224,8 @@ export default function HomeScreen() {
   const handleUseMyLocation = useCallback(async () => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      gpsRequestedRef.current = true;
+      setGpsNoPostalCode(false);
       await getCurrentLocation();
       // Location state will update via the hook - effect below handles the search
     } catch (err) {
@@ -271,7 +261,6 @@ export default function HomeScreen() {
   // repeatedly doesn't fire one tRPC search per keystroke. The previous
   // behavior could fan out into a dozen overlapping requests, blowing
   // Google Places quota and producing out-of-order UI updates.
-  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const SEARCH_DEBOUNCE_MS = 400;
 
   const debouncedSearch = useCallback(
@@ -325,6 +314,7 @@ export default function HomeScreen() {
   const handleZipCodeChange = (text: string) => {
     setZipCode(text);
     setLocationName(null);
+    setGpsNoPostalCode(false);
 
     // Debounced — typing "12345" no longer fires 5 searches. The
     // validity check inside debouncedSearch's timer handles the
@@ -465,6 +455,14 @@ export default function HomeScreen() {
         <View style={styles.locationFeedback}>
           <IconSymbol name="exclamationmark.circle" size={12} color={colors.error} />
           <ThemedText style={[styles.locationFeedbackText, { color: colors.error }]}>{locationError}</ThemedText>
+        </View>
+      )}
+      {!locationError && gpsNoPostalCode && (
+        <View style={styles.locationFeedback}>
+          <IconSymbol name="exclamationmark.circle" size={12} color={colors.error} />
+          <ThemedText style={[styles.locationFeedbackText, { color: colors.error }]}>
+            Couldn&apos;t find a postal code for your location. Please enter one.
+          </ThemedText>
         </View>
       )}
 

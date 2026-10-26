@@ -13,7 +13,16 @@ The **Privacy Policy** linked from every release: <https://sassyconsultingllc.co
 The **Terms of Service** linked from every release: <https://sassyconsultingllc.com/privacy/foodie-finder/terms>
 
 
-## 1.0.5 (vc29) - 2026-09-21
+## 1.0.5 (vc30) - 2026-10-26
+
+- "Use My Location" works every time. It used to do nothing once any
+  zip had been saved, which was after your first search.
+- A location set on any screen (Home, Browse, Settings) is now the one
+  every screen shows and searches. Before, Home could keep showing and
+  spinning on an old zip after you changed it in Settings, and saving
+  from another tab could put the old zip back.
+- If your location has no postal code, you're asked to type one instead
+  of nothing happening.
 
 - Restaurant pages now show every unique photo Google has, instead of
   repeating the same shot.

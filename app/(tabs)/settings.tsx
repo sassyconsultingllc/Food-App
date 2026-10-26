@@ -90,10 +90,13 @@ export default function SettingsScreen() {
   const [radius, setRadius] = useState(preferences.defaultRadius?.toString() || "5");
 
 
+  // Preferences are shared across screens now, so only reset the form when
+  // the saved location itself changes (not when e.g. a favorite is toggled
+  // on another tab while the user is mid-edit here).
   useEffect(() => {
     setZipCode(preferences.defaultZipCode || "");
     setRadius(preferences.defaultRadius?.toString() || "5");
-  }, [preferences]);
+  }, [preferences.defaultZipCode, preferences.defaultRadius]);
 
   const handleSave = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);

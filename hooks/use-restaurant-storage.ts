@@ -22,6 +22,11 @@ import {
 import { trpc } from "@/lib/trpc";
 import { useRestaurantSearchContext } from "@/context/restaurant-search-context";
 import { transformServerRestaurant } from "@/utils/restaurant-transform";
+import {
+  getSharedPreferences,
+  publishPreferences,
+  subscribePreferences,
+} from "@/utils/preferences-store";
 
 const STORAGE_KEYS = {
   PREFERENCES: "foodie_finder_preferences",
@@ -54,8 +59,12 @@ async function retryOperation<T>(
 }
 
 export function useRestaurantStorage() {
-  const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_PREFERENCES);
-  const [prefsLoading, setPrefsLoading] = useState(true);
+  // Start from the shared snapshot when another screen already loaded it, so a
+  // freshly mounted screen (e.g. the detail page) never flashes stale defaults.
+  const [preferences, setPreferences] = useState<UserPreferences>(
+    () => getSharedPreferences() ?? DEFAULT_PREFERENCES
+  );
+  const [prefsLoading, setPrefsLoading] = useState(() => getSharedPreferences() === null);
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [restaurantsLoading, setRestaurantsLoading] = useState(false);
   const [restaurantsError, setRestaurantsError] = useState<string | null>(null);
@@ -72,6 +81,15 @@ export function useRestaurantStorage() {
   useEffect(() => {
     preferencesRef.current = preferences;
   }, [preferences]);
+
+  // Every screen calls this hook separately; keep them all on the same
+  // preferences so a zip saved on one tab is what every other tab searches.
+  useEffect(() => {
+    return subscribePreferences((next) => {
+      preferencesRef.current = next;
+      setPreferences(next);
+    });
+  }, []);
 
   // Load preferences from storage - sync search params in same effect to avoid race.
   // Uses multiGet to collapse 3+ sequential JNI bridge hops into a single call —
@@ -96,7 +114,6 @@ export function useRestaurantStorage() {
         if (prefsJson) {
           const parsed = JSON.parse(prefsJson);
           loadedPrefs = { ...DEFAULT_PREFERENCES, ...parsed };
-          setPreferences(loadedPrefs);
           // Migrate legacy key to canonical storage if needed
           if (!stored && legacyStored) {
             await AsyncStorage.setItem(
@@ -121,11 +138,11 @@ export function useRestaurantStorage() {
             const reconciledIds = Object.keys(parsedFavorites);
             const prefIds = loadedPrefs.favorites || [];
             const needsReconcile =
-              reconciledIds.length !== prefIds.length ||
-              reconciledIds.some((id) => !prefIds.includes(id));
+              getSharedPreferences() === null &&
+              (reconciledIds.length !== prefIds.length ||
+              reconciledIds.some((id) => !prefIds.includes(id)));
             if (needsReconcile) {
               const reconciled = { ...loadedPrefs, favorites: reconciledIds };
-              setPreferences(reconciled);
               await AsyncStorage.setItem(
                 STORAGE_KEYS.PREFERENCES,
                 JSON.stringify(reconciled)
@@ -135,6 +152,17 @@ export function useRestaurantStorage() {
           } catch (e) {
             console.error("Error parsing favorites data:", e);
           }
+        }
+
+        // Another screen may have loaded or saved preferences while this read
+        // was in flight. Its copy is newer than what storage handed us.
+        const shared = getSharedPreferences();
+        if (shared) {
+          loadedPrefs = shared;
+          preferencesRef.current = shared;
+          setPreferences(shared);
+        } else {
+          publishPreferences(loadedPrefs);
         }
 
         // Seed shared context with saved zip on first mount only (don't overwrite an active search)
@@ -247,29 +275,24 @@ export function useRestaurantStorage() {
   // "More Like This" cards can produce identically-normalized Restaurant
   // objects (most importantly, absolute photo URLs).
 
-  // Save preferences to storage. Functional setState so rapid saves
-  // (e.g. toggling two settings in quick succession) don't clobber via
-  // a stale `preferences` closure.
+  // Save preferences to storage. Builds on the shared snapshot (updated
+  // synchronously) so rapid saves from any screen compose instead of one
+  // screen's stale copy overwriting another's change.
   const savePreferences = useCallback(async (newPrefs: Partial<UserPreferences>) => {
     try {
-      let persisted: UserPreferences | null = null;
-      setPreferences((prev) => {
-        const next = { ...prev, ...newPrefs };
-        // Keep postal/zip aliases in sync
-        if (newPrefs.defaultPostalCode !== undefined) {
-          next.defaultZipCode = newPrefs.defaultPostalCode;
-        }
-        if (newPrefs.defaultZipCode !== undefined) {
-          next.defaultPostalCode = newPrefs.defaultZipCode;
-        }
-        persisted = next;
-        return next;
-      });
-      if (persisted) {
-        await retryOperation(() =>
-          AsyncStorage.setItem(STORAGE_KEYS.PREFERENCES, JSON.stringify(persisted))
-        );
+      const prev = getSharedPreferences() ?? preferencesRef.current;
+      const next = { ...prev, ...newPrefs };
+      // Keep postal/zip aliases in sync
+      if (newPrefs.defaultPostalCode !== undefined) {
+        next.defaultZipCode = newPrefs.defaultPostalCode;
       }
+      if (newPrefs.defaultZipCode !== undefined) {
+        next.defaultPostalCode = newPrefs.defaultZipCode;
+      }
+      publishPreferences(next);
+      await retryOperation(() =>
+        AsyncStorage.setItem(STORAGE_KEYS.PREFERENCES, JSON.stringify(next))
+      );
 
       // Clear cache when location preferences change so new data is fetched
       if (
