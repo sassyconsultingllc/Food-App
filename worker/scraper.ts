@@ -10,6 +10,11 @@
  */
 
 import { inferSentimentFromMetadata, SentimentResult } from "./sentiment";
+// Unicode-aware. The old local copy kept only [a-z0-9], so every name in
+// Arabic, CJK, Thai, Cyrillic or Greek normalized to "" and was dropped by
+// mergeRestaurants (Riyadh and Cairo returned nothing, Seoul and Shanghai 2).
+import { normalizeRestaurantName } from "./restaurant-bucket";
+import { alpha2 } from "./country-codes";
 
 export interface ScrapedRestaurant {
   id: string;
@@ -394,7 +399,7 @@ async function fetchHERE(
       state: p.address?.state || p.address?.county || coords.state || '',
       postalCode: p.address?.postalCode || '',
       country: p.address?.countryName || coords.country || '',
-      countryCode: p.address?.countryCode?.toUpperCase() || coords.countryCode || '',
+      countryCode: alpha2(p.address?.countryCode) || coords.countryCode || '',
       latitude: p.position?.lat || coords.lat,
       longitude: p.position?.lng || coords.lng,
       phone: p.contacts?.[0]?.phone?.[0]?.value,
@@ -473,6 +478,11 @@ async function fetchGoogle(
     }
 
     const data = await res.json() as any;
+    // Google reports key, billing and quota problems as HTTP 200 with a
+    // status field, so without this they look like an empty area.
+    if (data.status && data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+      console.error(`[Scraper] Google status: ${data.status} ${data.error_message || ''}`);
+    }
     const places = (data.results || []).slice(0, limit);
 
     // Fetch Place Details in parallel to get full photo sets. Capped to
@@ -541,9 +551,6 @@ async function fetchGoogle(
   }
 }
 
-function normalizeRestaurantName(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
-}
 
 /**
  * Generate external service URLs for a restaurant
@@ -1215,7 +1222,20 @@ export async function scrapeRestaurants(opts: ScrapeOptions): Promise<ScrapedRes
     all.push(...culv.value);
   }
 
-  const merged = mergeRestaurants(all);
+  // Providers with thin coverage (HERE in Korea and China) answer with
+  // fuzzy matches from other continents; Seoul got Copenhagen. Keep only
+  // places inside the search radius, with some slack for providers that
+  // measure from a slightly different point.
+  const maxMeters = Math.max(radiusMeters * 1.5, radiusMeters + 2000);
+  const nearby = all.filter((r) =>
+    typeof r.latitude !== 'number' || typeof r.longitude !== 'number' ||
+    haversineMeters(coords.lat, coords.lng, r.latitude, r.longitude) <= maxMeters
+  );
+  if (nearby.length < all.length) {
+    console.log(`[Scraper] Dropped ${all.length - nearby.length} results outside ${maxMeters} m`);
+  }
+
+  const merged = mergeRestaurants(nearby);
   console.log(`[Scraper] Merged: ${merged.length} restaurants`);
 
   return merged.slice(0, limit);
