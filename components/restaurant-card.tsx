@@ -60,7 +60,7 @@ export function RestaurantCard({
   }, [imageUri]);
 
   const openStatus = restaurant.hours
-    ? getOpenStatus(restaurant.hours)
+    ? getOpenStatus(restaurant.hours, restaurant.utcOffsetMinutes)
     : { isOpen: false, statusText: "Hours unknown", todayHours: undefined };
 
   return (

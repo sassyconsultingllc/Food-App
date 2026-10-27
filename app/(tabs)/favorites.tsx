@@ -61,7 +61,7 @@ function FavoriteItem({
   colors: any;
 }) {
   const [localNotes, setLocalNotes] = useState(notes || "");
-  const openStatus = getOpenStatus(restaurant.hours);
+  const openStatus = getOpenStatus(restaurant.hours, restaurant.utcOffsetMinutes);
 
   useEffect(() => {
     setLocalNotes(notes || "");

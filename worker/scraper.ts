@@ -15,6 +15,7 @@ import { inferSentimentFromMetadata, SentimentResult } from "./sentiment";
 // mergeRestaurants (Riyadh and Cairo returned nothing, Seoul and Shanghai 2).
 import { normalizeRestaurantName } from "./restaurant-bucket";
 import { alpha2 } from "./country-codes";
+import { normalizeHours } from "../utils/culvers-hours";
 
 export interface ScrapedRestaurant {
   id: string;
@@ -49,6 +50,8 @@ export interface ScrapedRestaurant {
   isCulvers?: boolean;
   flavorOfTheDay?: string;
   flavorDescription?: string;
+  /** Store-local date (YYYY-MM-DD) the flavor fields are for. */
+  flavorDate?: string;
   reviewSummary: string;
   sentiment?: SentimentResult;
   // Generated URLs for external services
@@ -191,6 +194,20 @@ function parseGoogleWeekdayText(arr: any): Record<string, string> | undefined {
  * to another source than time the whole search out. S28.
  */
 const DEFAULT_FETCH_TIMEOUT_MS = 8000;
+// Paid providers that are out of credit, over quota or rejecting the key fail
+// the same way on every request. Skip them for a while instead of paying a
+// round trip (and a log line) per search; the free providers still answer.
+// Per isolate, so a fixed key or new credits take effect within the window.
+const PROVIDER_COOLDOWN_MS = 10 * 60 * 1000;
+const providerDownUntil = new Map<string, number>();
+function providerDown(name: string): boolean {
+  return (providerDownUntil.get(name) ?? 0) > Date.now();
+}
+function markProviderDown(name: string, why: string) {
+  providerDownUntil.set(name, Date.now() + PROVIDER_COOLDOWN_MS);
+  console.warn(`[Scraper] ${name} disabled for ${PROVIDER_COOLDOWN_MS / 60000} min: ${why}`);
+}
+
 async function fetchWithTimeout(
   input: string | URL,
   init: RequestInit = {},
@@ -286,7 +303,7 @@ async function fetchFoursquare(
   apiKey: string,
   limit: number
 ): Promise<Partial<ScrapedRestaurant>[]> {
-  if (!apiKey) return [];
+  if (!apiKey || providerDown('Foursquare')) return [];
 
   try {
     // New Foursquare Places API (FSQ OS). The legacy v3 host
@@ -302,7 +319,11 @@ async function fetchFoursquare(
     url.searchParams.set('radius', String(Math.min(radiusMeters, 100000)));
     url.searchParams.set('fsq_category_ids', '13065'); // Dining and Drinking
     url.searchParams.set('limit', String(Math.min(limit, 50)));
-    url.searchParams.set('fields', 'fsq_place_id,name,location,categories,latitude,longitude,tel,website,price,rating,hours');
+    // Pro fields only. Asking for any Premium field (rating, hours, tel,
+    // website, price, photos, tips) bills the whole call as Premium from the
+    // first request, which is what used up the account's credits. Ratings,
+    // hours and contact details come from Google and HERE instead.
+    url.searchParams.set('fields', 'fsq_place_id,name,location,categories,latitude,longitude');
 
     // Trim the key — a trailing newline from `wrangler secret put` corrupts
     // the `Bearer <key>` header (FSQ edge returns 400-empty instead of a clean
@@ -320,6 +341,7 @@ async function fetchFoursquare(
       // hides "no API credits remaining" (429) vs a real auth failure (401).
       const body = await res.text().catch(() => '');
       console.error(`[Scraper] Foursquare error: ${res.status} ${body.slice(0, 120)}`);
+      if ([401, 402, 403, 429].includes(res.status)) markProviderDown('Foursquare', `HTTP ${res.status}`);
       return [];
     }
 
@@ -467,7 +489,7 @@ async function fetchGoogle(
   apiKey: string,
   limit: number
 ): Promise<Partial<ScrapedRestaurant>[]> {
-  if (!apiKey) return [];
+  if (!apiKey || providerDown('Google')) return [];
 
   try {
     const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${coords.lat},${coords.lng}&radius=${Math.min(radiusMeters, 50000)}&type=restaurant&key=${apiKey}`;
@@ -482,6 +504,9 @@ async function fetchGoogle(
     // status field, so without this they look like an empty area.
     if (data.status && data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
       console.error(`[Scraper] Google status: ${data.status} ${data.error_message || ''}`);
+      if (['REQUEST_DENIED', 'OVER_QUERY_LIMIT', 'OVER_DAILY_LIMIT'].includes(data.status)) {
+        markProviderDown('Google', data.status);
+      }
     }
     const places = (data.results || []).slice(0, limit);
 
@@ -598,6 +623,18 @@ function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number)
 
 const MERGE_DISTANCE_METERS = 100;
 
+// Google, HERE and OSM list a Culver's as plain "Culver's" while the
+// Culver's locator record is "Culver's - Madison", so they never grouped and
+// the search showed a second copy of the store with no flavor and the wrong
+// hours. Give every Culver's the same key and let distance tell stores apart
+// (providers pin a store up to ~200 m from the locator's point).
+const CULVERS_KEY = 'culvers';
+const CULVERS_MERGE_DISTANCE_METERS = 250;
+function mergeKey(name: string): string {
+  const k = normalizeRestaurantName(name);
+  return k.startsWith(CULVERS_KEY) ? CULVERS_KEY : k;
+}
+
 function mergeRestaurants(all: Partial<ScrapedRestaurant>[]): ScrapedRestaurant[] {
   // Group by normalized name AND geographic proximity. Two records with the
   // same name only merge when they're within MERGE_DISTANCE_METERS of each
@@ -608,14 +645,14 @@ function mergeRestaurants(all: Partial<ScrapedRestaurant>[]): ScrapedRestaurant[
   const grouped: Partial<ScrapedRestaurant>[][] = [];
 
   for (const r of all) {
-    const key = normalizeRestaurantName(r.name || '');
+    const key = mergeKey(r.name || '');
     if (!key) continue;
 
     // Try to attach to an existing group with the same name AND within
     // MERGE_DISTANCE_METERS. Otherwise start a new group.
     let attached = false;
     for (const group of grouped) {
-      const sameName = normalizeRestaurantName(group[0].name || '') === key;
+      const sameName = mergeKey(group[0].name || '') === key;
       if (!sameName) continue;
 
       const g0 = group[0];
@@ -627,7 +664,7 @@ function mergeRestaurants(all: Partial<ScrapedRestaurant>[]): ScrapedRestaurant[
 
       if (hasCoords) {
         const d = haversineMeters(g0.latitude!, g0.longitude!, r.latitude!, r.longitude!);
-        if (d <= MERGE_DISTANCE_METERS) {
+        if (d <= (key === CULVERS_KEY ? CULVERS_MERGE_DISTANCE_METERS : MERGE_DISTANCE_METERS)) {
           group.push(r);
           attached = true;
           break;
@@ -778,11 +815,19 @@ function mergeRestaurants(all: Partial<ScrapedRestaurant>[]): ScrapedRestaurant[
       cuisineType: finalCuisine,
       categories: allCategories,
       photos: allPhotos.slice(0, 20),
-      hours: records.find(r => r.hours && Object.keys(r.hours).length > 0)?.hours,
+      // The Culver's locator's hours are the store's own; other providers'
+      // copies are often stale.
+      hours: (culversRecord?.hours && Object.keys(culversRecord.hours).length > 0)
+        ? culversRecord.hours
+        : records.find(r => r.hours && Object.keys(r.hours).length > 0)?.hours,
+      // Dropped here before, so the app never got Google's offset and
+      // checked "open now" against the phone's clock.
+      utcOffsetMinutes: (culversRecord ?? records.find(r => typeof r.utcOffsetMinutes === 'number'))?.utcOffsetMinutes,
       menuUrl: records.find(r => r.menuUrl)?.menuUrl,
       isCulvers: records.some(r => r.isCulvers) || undefined,
       flavorOfTheDay: records.find(r => r.flavorOfTheDay)?.flavorOfTheDay,
       flavorDescription: records.find(r => r.flavorDescription)?.flavorDescription,
+      flavorDate: records.find(r => r.flavorDate)?.flavorDate,
       reviewSummary,
       sentiment,
       yelpUrl: externalUrls.yelpUrl,
@@ -1081,6 +1126,71 @@ async function fetchOpenStreetMap(
 // Culver's locations — keyless US-only fallback
 // =============================================================================
 
+/**
+ * The parts of a Culver's locator record that change: hours, offset and
+ * today's flavor. Used for new scrapes and to refresh cached records.
+ */
+function culversStoreState(meta: any) {
+  // utcOffset is whole hours at the store, already adjusted for DST.
+  const utcOffsetMinutes = typeof meta.utcOffset === 'number' ? Math.round(meta.utcOffset * 60) : undefined;
+  let hours = normalizeHours(meta.dineInHours) ?? normalizeHours(meta.driveThruHours);
+  if (meta.isTemporarilyClosed) {
+    hours = Object.fromEntries(
+      ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((d) => [d, 'Closed'])
+    );
+  }
+  return {
+    hours,
+    utcOffsetMinutes,
+    flavorOfTheDay: meta.flavorOfDayName || undefined,
+    flavorDescription: meta.flavorOfTheDayDescription || undefined,
+    flavorDate: storeLocalDate(utcOffsetMinutes),
+  };
+}
+
+/** Today's date at a store with this UTC offset (US Central if unknown). */
+function storeLocalDate(utcOffsetMinutes?: number): string {
+  const offset = typeof utcOffsetMinutes === 'number' ? utcOffsetMinutes : -360;
+  return new Date(Date.now() + offset * 60_000).toISOString().slice(0, 10);
+}
+
+/**
+ * Flavor of the Day changes at midnight, but search results are cached for
+ * 24 h, so a cached Culver's showed yesterday's flavor (or none, for records
+ * cached before the flavor existed). Re-read stale Culver's records from the
+ * locator, which is free, and patch flavor, hours and offset in place.
+ * Returns true when anything changed. Never throws.
+ */
+export async function refreshCulversRecords(restaurants: any[]): Promise<boolean> {
+  const stale = restaurants.filter(
+    (r) => r?.isCulvers && typeof r.id === 'string' && r.id.startsWith('culvers_') &&
+      r.flavorDate !== storeLocalDate(r.utcOffsetMinutes)
+  );
+  if (stale.length === 0) return false;
+  try {
+    const lat = stale.reduce((a, r) => a + (r.latitude || 0), 0) / stale.length;
+    const lng = stale.reduce((a, r) => a + (r.longitude || 0), 0) / stale.length;
+    const url = `https://www.culvers.com/api/locator/getLocations?lat=${lat}&long=${lng}&limit=${Math.min(Math.max(stale.length + 5, 10), 25)}`;
+    const res = await fetchWithTimeout(url, {}, 8000);
+    if (!res.ok) return false;
+    const data: any = await res.json();
+    const byId = new Map<string, any>(
+      (data?.data?.geofences || []).map((g: any) => [`culvers_${g._id}`, g.metadata || {}])
+    );
+    let changed = false;
+    for (const r of stale) {
+      const meta = byId.get(r.id);
+      if (!meta) continue;
+      Object.assign(r, culversStoreState(meta));
+      changed = true;
+    }
+    return changed;
+  } catch (e) {
+    console.warn("[Scraper] Culver's refresh failed:", e);
+    return false;
+  }
+}
+
 async function fetchCulversLocations(
   coords: GeoCoords,
   limit: number = 10
@@ -1138,10 +1248,8 @@ async function fetchCulversLocations(
         priceRange: '$',
         cuisineType: 'Fast Food',
         categories: ['Fast Food', 'Burgers', 'Ice Cream'],
-        hours: meta.dineInHours,
+        ...culversStoreState(meta),
         isCulvers: true,
-        flavorOfTheDay: meta.flavorOfDayName || null,
-        flavorDescription: meta.flavorOfTheDayDescription || null,
         sources: ['culvers'],
         yelpUrl: externalUrls.yelpUrl,
         googleMapsUrl: externalUrls.googleMapsUrl,
