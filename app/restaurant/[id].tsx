@@ -694,8 +694,64 @@ export default function RestaurantDetailScreen() {
               </ThemedText>
             )}
             
-            {/* Highlights */}
-            {restaurant.sentiment.highlights && restaurant.sentiment.highlights.length > 0 && (
+            {/* Review verdicts: what this place is actually best / worst at */}
+            {restaurant.reviewAspects && restaurant.reviewAspects.length > 0 ? (
+              <>
+                {restaurant.reviewAspects.some((a) => a.verdict !== 'bad') && (
+                  <View style={styles.sentimentList}>
+                    <ThemedText type="defaultSemiBold" style={{ marginBottom: 4 }}>Reviewers say:</ThemedText>
+                    <View style={styles.tagContainer}>
+                      {restaurant.reviewAspects
+                        .filter((a) => a.verdict !== 'bad')
+                        .map((a) => {
+                          const tint = a.verdict === 'best' ? AppColors.copper : AppColors.skyBlue;
+                          return (
+                            <View
+                              key={a.key}
+                              style={[
+                                styles.tag,
+                                styles.aspectTag,
+                                { backgroundColor: a.verdict === 'best' ? tint : tint + '20' },
+                              ]}
+                              accessibilityLabel={`${a.label}, from ${a.positive} positive review mention${a.positive === 1 ? '' : 's'}`}
+                            >
+                              {a.verdict === 'best' && (
+                                <IconSymbol name="star.fill" size={12} color={AppColors.white} />
+                              )}
+                              <ThemedText
+                                style={[styles.tagText, { color: a.verdict === 'best' ? AppColors.white : tint, fontWeight: a.verdict === 'good' ? '400' : '600' }]}
+                              >
+                                {a.label}
+                              </ThemedText>
+                            </View>
+                          );
+                        })}
+                    </View>
+                  </View>
+                )}
+                {restaurant.reviewAspects.some((a) => a.verdict === 'bad') && (
+                  <View style={styles.sentimentList}>
+                    <ThemedText type="defaultSemiBold" style={{ marginBottom: 4 }}>Watch out for:</ThemedText>
+                    <View style={styles.tagContainer}>
+                      {restaurant.reviewAspects
+                        .filter((a) => a.verdict === 'bad')
+                        .map((a) => (
+                          <View
+                            key={a.key}
+                            style={[styles.tag, { backgroundColor: AppColors.copper + '20' }]}
+                            accessibilityLabel={`${a.label}, from ${a.negative} negative review mention${a.negative === 1 ? '' : 's'}`}
+                          >
+                            <ThemedText style={[styles.tagText, { color: AppColors.copper }]}>{a.label}</ThemedText>
+                          </View>
+                        ))}
+                    </View>
+                  </View>
+                )}
+              </>
+            ) : null}
+
+            {/* Highlights (rating-derived fallback when there is no review text) */}
+            {!restaurant.reviewAspects?.length && restaurant.sentiment.highlights && restaurant.sentiment.highlights.length > 0 && (
               <View style={styles.sentimentList}>
                 <ThemedText type="defaultSemiBold" style={{ marginBottom: 4 }}>Praised for:</ThemedText>
                 <View style={styles.tagContainer}>
@@ -709,7 +765,7 @@ export default function RestaurantDetailScreen() {
             )}
             
             {/* Warnings */}
-            {restaurant.sentiment.warnings && restaurant.sentiment.warnings.length > 0 && (
+            {!restaurant.reviewAspects?.length && restaurant.sentiment.warnings && restaurant.sentiment.warnings.length > 0 && (
               <View style={styles.sentimentList}>
                 <ThemedText type="defaultSemiBold" style={{ marginBottom: 4 }}>Watch out for:</ThemedText>
                 <View style={styles.tagContainer}>
@@ -1196,6 +1252,11 @@ const styles = StyleSheet.create({
   },
   tagText: {
     fontSize: 13,
+  },
+  aspectTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
   },
   // Similar restaurants styles
   similarLoading: {

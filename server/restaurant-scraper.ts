@@ -71,6 +71,11 @@ export interface ScrapedRestaurant {
   // Sentiment analysis
   sentiment: SentimentResult;
   reviewSummary: string;
+  /** Review-text verdicts; produced by the worker (worker/review-aspects.ts). */
+  reviewAspects?: import("../types/restaurant").ReviewAspect[];
+  editorialSummary?: string;
+  /** Restaurant-local UTC offset in minutes (Google utc_offset_minutes). */
+  utcOffsetMinutes?: number;
   
   // Culver's specific
   isCulvers?: boolean;
@@ -115,6 +120,10 @@ const GEOCODE_CACHE: Record<string, GeoCoords> = {};
  * Uses Nominatim (OpenStreetMap) - no country restriction by default
  * Returns null if geocoding fails - callers must handle this case
  */
+// Every outbound call is bounded so one slow provider can't hang the whole
+// search (the worker scraper does the same via fetchWithTimeout).
+const FETCH_TIMEOUT_MS = 10_000;
+
 async function getCoordinatesFromPostalCode(
   postalCode: string,
   countryCode?: string
@@ -143,6 +152,7 @@ async function getCoordinatesFromPostalCode(
       headers: {
         'User-Agent': 'FoodieFinder/1.0 (contact@sassyconsultingllc.com)',
       },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     
     if (response.ok) {
@@ -211,6 +221,7 @@ async function fetchFromFoursquare(
         'Authorization': apiKey,
         'Accept': 'application/json',
       },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -277,7 +288,7 @@ async function fetchFromHERE(
     
     const url = `https://discover.search.hereapi.com/v1/discover?at=${coords.lat},${coords.lng}&limit=${limit}&in=circle:${coords.lat},${coords.lng};r=${radiusMeters}&categories=${categoryId}${query}&apiKey=${apiKey}`;
 
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
 
     if (!response.ok) {
       console.error(`HERE API error: ${response.status}`);
@@ -397,6 +408,8 @@ async function fetchFromOpenStreetMap(
         'Content-Type': 'application/x-www-form-urlencoded',
         'User-Agent': 'FoodieFinder/1.0 (contact@sassyconsultingllc.com)',
       },
+      // Overpass gets its own [timeout:25] server-side; allow a little more.
+      signal: AbortSignal.timeout(30_000),
     });
 
     if (!response.ok) {
@@ -626,7 +639,7 @@ async function enrichGooglePlace(place: any, apiKey: string) {
   try {
     const fields = 'formatted_address,formatted_phone_number,website,photos,url,address_components';
     const detailUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.place_id}&fields=${fields}&key=${apiKey}`;
-    const res = await fetch(detailUrl);
+    const res = await fetch(detailUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (!res.ok) return null;
     const data = await res.json();
     if (data.status !== 'OK') return null;
@@ -686,7 +699,7 @@ async function fetchFromGooglePlaces(
     const keyword = cuisineType || 'restaurant';
     const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${coords.lat},${coords.lng}&radius=${radiusMeters}&type=restaurant&keyword=${encodeURIComponent(keyword)}&key=${apiKey}`;
 
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (!response.ok) {
       console.error(`Google Places API error: ${response.status}`);
       return [];
@@ -771,7 +784,8 @@ async function fetchCulversLocations(
 ): Promise<Partial<ScrapedRestaurant>[]> {
   try {
     const response = await fetch(
-      `https://www.culvers.com/api/locator/getLocations?lat=${coords.lat}&long=${coords.lng}&limit=${limit}`
+      `https://www.culvers.com/api/locator/getLocations?lat=${coords.lat}&long=${coords.lng}&limit=${limit}`,
+      { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }
     );
 
     if (!response.ok) {
@@ -1234,7 +1248,8 @@ export async function fetchCulversFlavorOfTheDay(
     }
 
     const response = await fetch(
-      `https://www.culvers.com/api/locator/getLocations?lat=${coords.lat}&long=${coords.lng}&limit=5`
+      `https://www.culvers.com/api/locator/getLocations?lat=${coords.lat}&long=${coords.lng}&limit=5`,
+      { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }
     );
 
     if (!response.ok) {

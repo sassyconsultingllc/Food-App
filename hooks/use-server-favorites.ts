@@ -57,6 +57,9 @@ function transformToClientRestaurant(server: ScrapedRestaurant): Restaurant {
     photos: server.photos,
     sentiment: server.sentiment,
     reviewSummary: server.reviewSummary,
+    reviewAspects: server.reviewAspects,
+    editorialSummary: server.editorialSummary,
+    utcOffsetMinutes: server.utcOffsetMinutes,
     lastUpdated: server.scrapedAt,
     dataSources: server.sources,
   };

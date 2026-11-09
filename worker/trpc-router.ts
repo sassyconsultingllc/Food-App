@@ -22,6 +22,7 @@ import { semanticSearch, findSimilar, indexRestaurants, getIndexStats, recommend
 import { RestaurantEmbeddingInput } from "./embeddings";
 import { guardPublicNote, checkNoteRateLimit } from "./content-guard";
 import { computeBucketId } from "./restaurant-bucket";
+import { toAlpha2 } from "./country-codes";
 import type { KVNamespace } from "@cloudflare/workers-types";
 
 interface Context {
@@ -303,8 +304,10 @@ export const appRouter = router({
 
         // If we have an effective country code, prefer restaurants from that country
         if (effectiveCountryCode) {
-          const countryUpper = effectiveCountryCode.toUpperCase();
-          const filtered = restaurants.filter(r => (r.countryCode || '').toUpperCase() === countryUpper);
+          // Normalize both sides: providers mix alpha-2 ("US") and alpha-3
+          // ("USA", HERE). A raw string compare dropped every HERE result.
+          const countryUpper = toAlpha2(effectiveCountryCode) || effectiveCountryCode.toUpperCase();
+          const filtered = restaurants.filter(r => toAlpha2(r.countryCode) === countryUpper);
           if (filtered.length > 0) {
             console.log(`[Router] Filtering results to country ${countryUpper}: ${filtered.length}/${restaurants.length}`);
             restaurants = filtered;

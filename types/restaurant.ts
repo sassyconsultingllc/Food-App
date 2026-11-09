@@ -144,6 +144,23 @@ export interface Restaurant {
     warnings: string[];
   };
   reviewSummary?: string;
+  /**
+   * Verdicts mined from review text, strongest first: "Best place for quiet
+   * atmosphere", "Great oceanside coffee", "Bad service". Mirrors
+   * worker/review-aspects.ts ReviewAspect.
+   */
+  reviewAspects?: ReviewAspect[];
+  /** Google's one-line editorial description, when it has one. */
+  editorialSummary?: string;
+}
+
+export interface ReviewAspect {
+  key: string;
+  kind: "vibe" | "setting" | "item" | "quality" | "combo";
+  verdict: "best" | "great" | "good" | "bad";
+  label: string;
+  positive: number;
+  negative: number;
 }
 
 export interface UserPreferences {
