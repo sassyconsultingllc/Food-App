@@ -1,0 +1,4 @@
+Restaurant pages now show every unique photo Google has, instead of repeating the same shot.
+The menu sits right under the photos, with a clear "View Full Menu" button when the restaurant publishes one.
+Personal notes are on the restaurant page (private, this device only).
+Community tips warn before posting a phone number or email, and sit in their own shared section below your notes.

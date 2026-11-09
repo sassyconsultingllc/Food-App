@@ -13,7 +13,7 @@ The **Privacy Policy** linked from every release: <https://sassyconsultingllc.co
 The **Terms of Service** linked from every release: <https://sassyconsultingllc.com/privacy/foodie-finder/terms>
 
 
-## 1.0.5 (vc29) - 2026-09-21
+## 1.0.5 (vc30) - 2026-09-24
 
 - Restaurant pages now show every unique photo Google has, instead of
   repeating the same shot.
