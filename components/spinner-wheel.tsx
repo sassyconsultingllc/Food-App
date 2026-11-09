@@ -248,7 +248,7 @@ export function SpinnerWheel({
       }
     };
     tickHaptic();
-  }, [isSpinning, disabled, restaurants, scrollY, glowOpacity, onSpinStart, onSpinComplete]);
+  }, [isSpinning, disabled, restaurants, scrollY, glowOpacity, onSpinStart, onSpinComplete, markSpinCompleted, playSound]);
 
   // Animated reel position
   const animatedReelStyle = useAnimatedStyle(() => ({

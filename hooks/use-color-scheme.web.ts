@@ -11,7 +11,7 @@
 
 import { useEffect, useState } from "react";
 import { useColorScheme as useSystemColorScheme } from "react-native";
-import { useTheme } from "@/contexts/theme-context";
+import { useOptionalTheme } from "@/contexts/theme-context";
 
 export function useColorScheme(): "light" | "dark" {
   const [hasHydrated, setHasHydrated] = useState(false);
@@ -21,12 +21,8 @@ export function useColorScheme(): "light" | "dark" {
     setHasHydrated(true);
   }, []);
 
-  let effectiveTheme: "light" | "dark" | undefined;
-  try {
-    ({ effectiveTheme } = useTheme());
-  } catch {
-    // Outside ThemeProvider
-  }
+  // undefined outside ThemeProvider: fall through to the system value.
+  const effectiveTheme = useOptionalTheme()?.effectiveTheme;
 
   if (!hasHydrated) return "light";
   return effectiveTheme ?? systemColorScheme ?? "light";

@@ -13,18 +13,14 @@
  * path changed.
  */
 
-import { useTheme } from "@/contexts/theme-context";
+import { useOptionalTheme } from "@/contexts/theme-context";
 import { useColorScheme as useSystemColorScheme } from "react-native";
 
 export function useColorScheme(): "light" | "dark" {
   // Call both hooks unconditionally so call order is stable.
   const systemColorScheme = useSystemColorScheme();
-  let effectiveTheme: "light" | "dark" | undefined;
-  try {
-    ({ effectiveTheme } = useTheme());
-  } catch {
-    // Outside ThemeProvider — fall through to system value
-  }
+  // undefined outside ThemeProvider: fall through to the system value.
+  const effectiveTheme = useOptionalTheme()?.effectiveTheme;
   return effectiveTheme ?? systemColorScheme ?? "light";
 }
 
