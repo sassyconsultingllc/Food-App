@@ -252,6 +252,7 @@ export default function SettingsScreen() {
           </View>
 
           <Pressable
+            accessibilityRole="button"
             onPress={handleSave}
             style={[styles.saveButton, { backgroundColor: colors.accent }]}
           >
@@ -267,6 +268,8 @@ export default function SettingsScreen() {
 
           <View style={styles.themeOptions}>
             <Pressable
+              accessibilityRole="radio"
+              accessibilityState={{ checked: themeMode === "light" }}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 setThemeMode("light");
@@ -282,6 +285,8 @@ export default function SettingsScreen() {
             </Pressable>
 
             <Pressable
+              accessibilityRole="radio"
+              accessibilityState={{ checked: themeMode === "dark" }}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 setThemeMode("dark");
@@ -297,6 +302,8 @@ export default function SettingsScreen() {
             </Pressable>
 
             <Pressable
+              accessibilityRole="radio"
+              accessibilityState={{ checked: themeMode === "system" }}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 setThemeMode("system");
@@ -330,6 +337,8 @@ export default function SettingsScreen() {
               </View>
             </View>
             <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Clear recently viewed history"
               onPress={() => {
                 Alert.alert(
                   "Clear History",

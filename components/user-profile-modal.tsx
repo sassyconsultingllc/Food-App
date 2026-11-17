@@ -140,7 +140,7 @@ export function UserProfileModal({
       animationType="slide"
       onRequestClose={onClose}
     >
-      <Pressable style={styles.backdrop} onPress={onClose} />
+      <Pressable accessibilityRole="button" accessibilityLabel="Close profile" style={styles.backdrop} onPress={onClose} />
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.keyboardView}
@@ -191,7 +191,7 @@ export function UserProfileModal({
           </Pressable>
 
           {photoUri && (
-            <Pressable onPress={handleRemovePhoto} hitSlop={8} style={styles.removePhotoLink}>
+            <Pressable accessibilityRole="button" onPress={handleRemovePhoto} hitSlop={8} style={styles.removePhotoLink}>
               <ThemedText style={[styles.removePhotoText, { color: colors.textSecondary }]}>
                 Remove photo
               </ThemedText>
@@ -246,6 +246,9 @@ export function UserProfileModal({
 
             {/* Sound / Celebration toggle */}
             <Pressable
+              accessibilityRole="switch"
+              accessibilityState={{ checked: soundSettings.celebrationEnabled }}
+              accessibilityLabel="Sound and celebration"
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 toggleCelebration();
@@ -276,6 +279,7 @@ export function UserProfileModal({
 
           {/* Save */}
           <Pressable
+            accessibilityRole="button"
             onPress={handleSave}
             style={({ pressed }) => [
               styles.saveButton,

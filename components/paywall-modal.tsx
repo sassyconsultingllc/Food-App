@@ -89,6 +89,7 @@ export function PaywallModal({
       <View style={styles.backdrop}>
         <ThemedView style={[styles.sheet, { backgroundColor: colors.surface }]}>
           <Pressable
+            accessibilityRole="button"
             onPress={handleClose}
             style={styles.closeBtn}
             accessibilityLabel="Close paywall"

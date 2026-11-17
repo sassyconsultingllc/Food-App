@@ -126,4 +126,61 @@ describe("Hours Utilities", () => {
       expect(getClosingTime(undefined)).toBe(null);
     });
   });
+
+  describe("split shifts and shared am/pm", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    // Google weekday_text for a lunch + dinner place. Dec 22, 2025 is a Monday.
+    const splitShift: HoursOfOperation = {
+      monday: "11:00 AM – 2:00 PM, 5:00 – 9:00 PM",
+      tuesday: "11:00 AM – 2:00 PM, 5:00 – 9:00 PM",
+    };
+
+    it("is open during the second range of a split-shift day", () => {
+      vi.setSystemTime(new Date(2025, 11, 22, 18, 0, 0)); // 6 PM
+      expect(isOpenNow(splitShift)).toBe(true);
+      expect(getOpenStatus(splitShift).nextChange).toBe("Closes at 9:00 PM");
+    });
+
+    it("is closed between the two ranges and names the next opening", () => {
+      vi.setSystemTime(new Date(2025, 11, 22, 15, 30, 0)); // 3:30 PM
+      expect(isOpenNow(splitShift)).toBe(false);
+      expect(getOpenStatus(splitShift).nextChange).toBe("Opens today at 5:00 PM");
+    });
+
+    it("reads Foursquare-style 24h split shifts", () => {
+      const fsq: HoursOfOperation = { monday: "11:00 - 14:00, 17:00 - 22:00" };
+      vi.setSystemTime(new Date(2025, 11, 22, 19, 0, 0));
+      expect(isOpenNow(fsq)).toBe(true);
+      vi.setSystemTime(new Date(2025, 11, 22, 15, 0, 0));
+      expect(isOpenNow(fsq)).toBe(false);
+    });
+
+    it("shares the closing am/pm when the opening side omits it", () => {
+      const evening: HoursOfOperation = { monday: "7:00 – 10:00 PM" };
+      vi.setSystemTime(new Date(2025, 11, 22, 9, 0, 0)); // 9 AM, not open yet
+      expect(isOpenNow(evening)).toBe(false);
+      vi.setSystemTime(new Date(2025, 11, 22, 20, 0, 0)); // 8 PM
+      expect(isOpenNow(evening)).toBe(true);
+    });
+
+    it("still reads '11 - 2pm' as opening at 11am", () => {
+      const lunch: HoursOfOperation = { monday: "11 - 2pm" };
+      vi.setSystemTime(new Date(2025, 11, 22, 12, 0, 0));
+      expect(isOpenNow(lunch)).toBe(true);
+    });
+
+    it("does not point at an opening that already passed today", () => {
+      vi.setSystemTime(new Date(2025, 11, 22, 23, 0, 0)); // Monday 11 PM
+      const status = getOpenStatus(mockHours);
+      expect(status.isOpen).toBe(false);
+      expect(status.nextChange).toBe("Opens tomorrow at 10:00 AM");
+    });
+  });
 });

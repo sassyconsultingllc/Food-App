@@ -157,6 +157,8 @@ export function PersonalNotesModal({
               <View style={styles.quickGrid}>
                 {QUICK_NOTES.map((note) => (
                   <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Add quick note: ${note}`}
                     key={note}
                     onPress={() => appendQuickNote(note)}
                     style={[styles.quickChip, { backgroundColor: colors.surface, borderColor: colors.border }]}

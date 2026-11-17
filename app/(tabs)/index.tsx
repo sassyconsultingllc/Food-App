@@ -77,7 +77,9 @@ export default function HomeScreen() {
     currentSearchParams,
     savePreferences,
     searchWithNewParams,
+    refetchRestaurants,
     isFetching,
+    error: searchError,
   } = useRestaurantStorage();
 
   // Spin history for exclusion
@@ -319,8 +321,25 @@ export default function HomeScreen() {
       searchDebounceRef.current = null;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    searchWithNewParams(zipCode, radius);
-  }, [zipCode, radius, searchWithNewParams]);
+    // An unchanged ZIP + radius leaves the query key as it was, so React
+    // Query would serve its cache and the button would do nothing at all.
+    // Force a real refetch in that case.
+    if (
+      currentSearchParams.zipCode === zipCode &&
+      currentSearchParams.radius === radius
+    ) {
+      refetchRestaurants();
+    } else {
+      searchWithNewParams(zipCode, radius);
+    }
+  }, [
+    zipCode,
+    radius,
+    searchWithNewParams,
+    refetchRestaurants,
+    currentSearchParams.zipCode,
+    currentSearchParams.radius,
+  ]);
 
   const handleZipCodeChange = (text: string) => {
     setZipCode(text);
@@ -465,6 +484,15 @@ export default function HomeScreen() {
         <View style={styles.locationFeedback}>
           <IconSymbol name="exclamationmark.circle" size={12} color={colors.error} />
           <ThemedText style={[styles.locationFeedbackText, { color: colors.error }]}>{locationError}</ThemedText>
+        </View>
+      )}
+      {/* A failed search otherwise looks identical to "no restaurants here". */}
+      {searchError && !isFetching && (
+        <View style={styles.locationFeedback} accessibilityLiveRegion="polite">
+          <IconSymbol name="exclamationmark.circle" size={12} color={colors.error} />
+          <ThemedText style={[styles.locationFeedbackText, { color: colors.error }]}>
+            Couldn&apos;t load restaurants. Check your connection and tap Refresh.
+          </ThemedText>
         </View>
       )}
 

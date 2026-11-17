@@ -111,6 +111,8 @@ export default function BrowseScreen() {
     searchWithNewParams,
     loading: restaurantsLoading,
     isFetching,
+    error: restaurantsError,
+    refetchRestaurants,
   } = useRestaurantStorage();
 
   // Build taste profile from favorites so we can flag matching cards below.
@@ -492,7 +494,7 @@ export default function BrowseScreen() {
             <ActivityIndicator size="small" color={AppColors.copper} />
           )}
           {searchQuery.length > 0 && !aiLoading && (
-            <Pressable onPress={() => { setSearchQuery(""); aiClear(); }}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Clear search" hitSlop={8} onPress={() => { setSearchQuery(""); aiClear(); }}>
               <IconSymbol name="xmark" size={18} color={colors.textSecondary} />
             </Pressable>
           )}
@@ -536,6 +538,8 @@ export default function BrowseScreen() {
           <>
             {/* Filter toggle button */}
             <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: filtersExpanded }}
               onPress={() => setFiltersExpanded(!filtersExpanded)}
               style={({ pressed }: { pressed: boolean }) => [
                 styles.filterToggle,
@@ -741,6 +745,11 @@ export default function BrowseScreen() {
               {aiError}
             </ThemedText>
           )}
+          {restaurantsError && searchMode === 'traditional' && !isFetching && allRestaurants.length > 0 && (
+            <ThemedText style={[styles.errorText, { color: AppColors.error }]}>
+              Couldn&apos;t refresh — showing saved results
+            </ThemedText>
+          )}
         </View>
       </View>
 
@@ -783,6 +792,33 @@ export default function BrowseScreen() {
                 <ThemedText style={[styles.emptyText, { color: colors.textSecondary }]}>
                   Finding restaurants near you…
                 </ThemedText>
+              </>
+            ) : restaurantsError && searchMode === 'traditional' && !isFetching && allRestaurants.length === 0 ? (
+              // The search itself failed (offline, server error). "No
+              // restaurants found — try adjusting your filters" would blame
+              // the wrong thing and offer no way forward.
+              <>
+                <IconSymbol name="exclamationmark.circle" size={48} color={colors.textSecondary} />
+                <ThemedText style={[styles.emptyText, { color: colors.textSecondary }]}>
+                  Couldn&apos;t load restaurants
+                </ThemedText>
+                <ThemedText style={[styles.emptySubtext, { color: colors.textSecondary }]}>
+                  Check your connection and try again.
+                </ThemedText>
+                <Pressable
+                  onPress={() => refetchRestaurants()}
+                  focusable
+                  accessibilityRole="button"
+                  accessibilityLabel="Try loading restaurants again"
+                  style={({ pressed }: { pressed: boolean }) => [
+                    styles.clearFiltersButton,
+                    { borderColor: colors.accent, opacity: pressed ? 0.9 : 1 },
+                  ]}
+                >
+                  <ThemedText style={[styles.clearFiltersText, { color: colors.accent }]}>
+                    Try Again
+                  </ThemedText>
+                </Pressable>
               </>
             ) : (
               <>

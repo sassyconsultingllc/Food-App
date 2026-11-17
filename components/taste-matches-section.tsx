@@ -103,6 +103,8 @@ export function TasteMatchesSection({
       {/* Tab switcher */}
       <View style={[styles.tabRow, { borderColor: colors.border }]}>
         <Pressable
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === "local" }}
           onPress={() => {
             Haptics.selectionAsync();
             setActiveTab("local");
@@ -129,6 +131,8 @@ export function TasteMatchesSection({
           </ThemedText>
         </Pressable>
         <Pressable
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === "travel" }}
           onPress={() => {
             Haptics.selectionAsync();
             setActiveTab("travel");
@@ -166,6 +170,8 @@ export function TasteMatchesSection({
         >
           {matches.map((m) => (
             <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`View details for ${m.restaurant.name}`}
               key={m.restaurant.id}
               onPress={() => handlePress(m.restaurant.id)}
               style={({ pressed }) => [
@@ -226,6 +232,7 @@ export function TasteMatchesSection({
 
       {matches.length === 0 && otherHasResults && (
         <Pressable
+          accessibilityRole="button"
           onPress={() => setActiveTab(activeTab === "local" ? "travel" : "local")}
           style={styles.switchHint}
         >
