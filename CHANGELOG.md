@@ -13,6 +13,14 @@ The **Privacy Policy** linked from every release: <https://sassyconsultingllc.co
 The **Terms of Service** linked from every release: <https://sassyconsultingllc.com/privacy/foodie-finder/terms>
 
 
+## 1.0.5 (vc32) - 2026-11-17
+
+- Restaurant pages stay reliable and responsive even when photos, hours, or external network calls fail or time out.
+- Place review summaries tell you what a restaurant is best known for at a glance without losing HERE provider results.
+- Fixed Culver's flavor of the day and business hours parsing, local timezone open-now offsets, and Foursquare fallback pricing.
+- Retains non-Latin restaurant names and correctly maps international country codes in searches.
+- Fixed taste-matches crash and restored full test/linter stability.
+
 ## 1.0.5 (vc31) - 2026-10-26
 
 <!-- vc30 was built on 2026-09-24 from ff8ee7d (the photos/menu/notes items
@@ -30,6 +38,8 @@ The **Terms of Service** linked from every release: <https://sassyconsultingllc.
 - A favorite added on one tab shows up on the Favorites tab right away,
   and a personal note written on a restaurant page can no longer be
   overwritten by an older copy when the app goes to the background.
+
+## 1.0.5 (vc30) - 2026-09-24
 
 - Restaurant pages now show every unique photo Google has, instead of
   repeating the same shot.

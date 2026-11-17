@@ -14,8 +14,9 @@ import { inferSentimentFromMetadata, SentimentResult } from "./sentiment";
 // Arabic, CJK, Thai, Cyrillic or Greek normalized to "" and was dropped by
 // mergeRestaurants (Riyadh and Cairo returned nothing, Seoul and Shanghai 2).
 import { normalizeRestaurantName } from "./restaurant-bucket";
-import { alpha2 } from "./country-codes";
+import { toAlpha2, alpha2 } from "./country-codes";
 import { normalizeHours } from "../utils/culvers-hours";
+import { extractReviewAspects, type ReviewAspect } from "./review-aspects";
 
 export interface ScrapedRestaurant {
   id: string;
@@ -54,6 +55,14 @@ export interface ScrapedRestaurant {
   flavorDate?: string;
   reviewSummary: string;
   sentiment?: SentimentResult;
+  /**
+   * Aspect verdicts mined from review text ("Best place for quiet
+   * atmosphere", "Great oceanside coffee"). Raw review text is never stored
+   * or returned, only these derived labels.
+   */
+  reviewAspects?: ReviewAspect[];
+  /** Google's one-line editorial description of the place, when it has one. */
+  editorialSummary?: string;
   // Generated URLs for external services
   yelpUrl?: string;
   googleMapsUrl?: string;
@@ -208,6 +217,12 @@ function markProviderDown(name: string, why: string) {
   console.warn(`[Scraper] ${name} disabled for ${PROVIDER_COOLDOWN_MS / 60000} min: ${why}`);
 }
 
+const OVERPASS_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  // private.coffee and kumi.systems timed out from Workers on 2026-11-09.
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+] as const;
+
 async function fetchWithTimeout(
   input: string | URL,
   init: RequestInit = {},
@@ -361,7 +376,7 @@ async function fetchFoursquare(
         country: country,
         // New API `location.country` is an ISO-2 code (e.g. "US"); take first
         // two chars so the trpc-router country filter still matches.
-        countryCode: country.toUpperCase().slice(0, 2) || coords.countryCode || '',
+        countryCode: toAlpha2(country) || coords.countryCode || '',
         latitude: lat,
         longitude: lng,
         phone: p.tel,
@@ -382,6 +397,17 @@ async function fetchFoursquare(
     console.error('[Scraper] Foursquare fetch error:', e);
     return [];
   }
+}
+
+// Primary HERE categories that mark a business you can't sit down and eat at.
+const HERE_NON_VENUE_PRIMARY = ['catering', 'food production', 'dancing'];
+
+// HERE's address.label is "<title>, <street>, <city> ..." — the name is already
+// shown above the address, so repeating it reads as a bug on every card.
+function stripTitlePrefix(label: string, title?: string): string {
+  if (!title) return label;
+  const prefix = `${title}, `;
+  return label.startsWith(prefix) ? label.slice(prefix.length) : label;
 }
 
 async function fetchHERE(
@@ -413,15 +439,27 @@ async function fetchHERE(
     }
 
     const data = await res.json() as any;
-    return (data.items || []).map((p: any) => ({
+    // HERE /v1/discover only *biases* toward `at`; it has no radius, so far-off
+    // matches for q=restaurant slip in. Enforce the caller's radius here.
+    // Also drop places whose PRIMARY category is a non-venue food business
+    // (caterers, food-production offices, restaurant-group HQs) or a dance
+    // club — they carry a secondary "Restaurant" tag, so isNonFoodPlace's
+    // any-category food signal keeps them, but nobody can eat there.
+    const items = (data.items || []).filter((p: any) => {
+      if (typeof p.distance === 'number' && p.distance > radiusMeters) return false;
+      const primary = String(p.categories?.[0]?.name || '').toLowerCase();
+      return !HERE_NON_VENUE_PRIMARY.some((tok) => primary.includes(tok));
+    });
+    return items.map((p: any) => ({
       id: `here_${p.id}`,
       name: p.title,
-      address: p.address?.label || '',
+      address: stripTitlePrefix(p.address?.label || '', p.title),
       city: p.address?.city || coords.city || '',
       state: p.address?.state || p.address?.county || coords.state || '',
       postalCode: p.address?.postalCode || '',
       country: p.address?.countryName || coords.country || '',
-      countryCode: alpha2(p.address?.countryCode) || coords.countryCode || '',
+      // HERE uses alpha-3 ("USA"); everything downstream compares alpha-2.
+      countryCode: toAlpha2(p.address?.countryCode) || coords.countryCode || '',
       latitude: p.position?.lat || coords.lat,
       longitude: p.position?.lng || coords.lng,
       phone: p.contacts?.[0]?.phone?.[0]?.value,
@@ -453,13 +491,18 @@ async function fetchGooglePlaceDetails(
   menuUrl?: string;
   hours?: Record<string, string>;
   utcOffsetMinutes?: number;
+  reviewAspects?: ReviewAspect[];
+  editorialSummary?: string;
 } | null> {
   try {
     // opening_hours added so the "open now" badge actually works — previously
     // the worker never requested hours and every restaurant showed "Hours unknown".
     // utc_offset_minutes lets open-now run on the RESTAURANT's clock instead
     // of the device's (wrong whenever the user searches another timezone).
-    const fields = 'photos,website,formatted_phone_number,url,opening_hours,utc_offset_minutes';
+    // reviews + editorial_summary feed the aspect verdicts ("Great oceanside
+    // coffee"). Both are Atmosphere-tier fields, so this call bills at the
+    // Atmosphere rate; it is still one call per place, as before.
+    const fields = 'photos,website,formatted_phone_number,url,opening_hours,utc_offset_minutes,reviews,editorial_summary';
     const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=${fields}&key=${apiKey}`;
     const res = await fetchWithTimeout(url);
     if (!res.ok) return null;
@@ -477,7 +520,24 @@ async function fetchGooglePlaceDetails(
     const hours = parseGoogleWeekdayText(d.opening_hours?.weekday_text);
     const utcOffsetMinutes =
       typeof d.utc_offset_minutes === 'number' ? d.utc_offset_minutes : undefined;
-    return { photos, website, phone: d.formatted_phone_number, menuUrl, hours, utcOffsetMinutes };
+    const reviews = Array.isArray(d.reviews)
+      ? d.reviews
+          .filter((r: any) => typeof r?.text === 'string' && r.text.trim())
+          .map((r: any) => ({ text: r.text as string, rating: typeof r.rating === 'number' ? r.rating : undefined }))
+      : [];
+    const reviewAspects = reviews.length ? extractReviewAspects(reviews) : undefined;
+    const editorialSummary =
+      typeof d.editorial_summary?.overview === 'string' ? d.editorial_summary.overview.trim() || undefined : undefined;
+    return {
+      photos,
+      website,
+      phone: d.formatted_phone_number,
+      menuUrl,
+      hours,
+      utcOffsetMinutes,
+      reviewAspects: reviewAspects?.length ? reviewAspects : undefined,
+      editorialSummary,
+    };
   } catch {
     return null;
   }
@@ -500,13 +560,15 @@ async function fetchGoogle(
     }
 
     const data = await res.json() as any;
-    // Google reports key, billing and quota problems as HTTP 200 with a
-    // status field, so without this they look like an empty area.
+    // Google returns HTTP 200 even for REQUEST_DENIED / OVER_QUERY_LIMIT /
+    // INVALID_REQUEST, with an empty results array. Without this, a billing or
+    // key problem shows up only as "Google: 0" and photos silently vanish.
     if (data.status && data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-      console.error(`[Scraper] Google status: ${data.status} ${data.error_message || ''}`);
+      console.error(`[Scraper] Google status ${data.status}: ${String(data.error_message || '').slice(0, 160)}`);
       if (['REQUEST_DENIED', 'OVER_QUERY_LIMIT', 'OVER_DAILY_LIMIT'].includes(data.status)) {
         markProviderDown('Google', data.status);
       }
+      return [];
     }
     const places = (data.results || []).slice(0, limit);
 
@@ -567,6 +629,8 @@ async function fetchGoogle(
         menuUrl: details?.menuUrl,
         hours: details?.hours,
         utcOffsetMinutes: details?.utcOffsetMinutes,
+        reviewAspects: details?.reviewAspects,
+        editorialSummary: details?.editorialSummary,
         sources: ['google'],
       };
     });
@@ -749,13 +813,31 @@ function mergeRestaurants(all: Partial<ScrapedRestaurant>[]): ScrapedRestaurant[
       ratings.aggregated,
       ratings.totalReviews
     );
-    
+
+    // Review-text verdicts beat rating-derived tags: they say WHY people go.
+    // Feeding them into highlights/warnings also puts them in the embedding
+    // text, so semantic search for "quiet coffee by the ocean" can hit.
+    const reviewAspects = records.find((r) => r.reviewAspects?.length)?.reviewAspects;
+    const editorialSummary = records.find((r) => r.editorialSummary)?.editorialSummary;
+    if (reviewAspects?.length) {
+      const praised = reviewAspects.filter((a) => a.verdict !== 'bad').map((a) => a.label);
+      const panned = reviewAspects.filter((a) => a.verdict === 'bad').map((a) => a.label);
+      if (praised.length) sentiment.highlights = praised;
+      if (panned.length) sentiment.warnings = panned;
+    }
+
     // Build enhanced review summary
     const cuisineDesc = primary.cuisineType?.toLowerCase() || 'restaurant';
     const locationDesc = primary.city || 'the area';
-    let reviewSummary = `${primary.name} is a ${cuisineDesc} in ${locationDesc}.`;
+    let reviewSummary = editorialSummary
+      ? `${editorialSummary.replace(/\.?$/, '.')}`
+      : `${primary.name} is a ${cuisineDesc} in ${locationDesc}.`;
     if (sentiment.summary) {
       reviewSummary += ` ${sentiment.summary}`;
+    }
+    const topAspects = (reviewAspects || []).filter((a) => a.verdict !== 'bad').slice(0, 3);
+    if (topAspects.length) {
+      reviewSummary += ` Reviewers say: ${topAspects.map((a) => a.label.toLowerCase()).join('; ')}.`;
     }
     
     // Get address info for URL generation
@@ -830,6 +912,8 @@ function mergeRestaurants(all: Partial<ScrapedRestaurant>[]): ScrapedRestaurant[
       flavorDate: records.find(r => r.flavorDate)?.flavorDate,
       reviewSummary,
       sentiment,
+      reviewAspects,
+      editorialSummary,
       yelpUrl: externalUrls.yelpUrl,
       googleMapsUrl: externalUrls.googleMapsUrl,
       doordashUrl: externalUrls.doordashUrl,
@@ -1055,20 +1139,24 @@ async function fetchOpenStreetMap(
     const cuisineFilter = safeCuisine ? `["cuisine"~"${safeCuisine}",i]` : '';
     const query = `[out:json][timeout:20];(node["amenity"="restaurant"]${cuisineFilter}(around:${radiusMeters},${coords.lat},${coords.lng});node["amenity"="fast_food"]${cuisineFilter}(around:${radiusMeters},${coords.lat},${coords.lng});node["amenity"="cafe"]["cuisine"]${cuisineFilter}(around:${radiusMeters},${coords.lat},${coords.lng});way["amenity"="restaurant"]${cuisineFilter}(around:${radiusMeters},${coords.lat},${coords.lng});way["amenity"="fast_food"]${cuisineFilter}(around:${radiusMeters},${coords.lat},${coords.lng}););out center ${limit};`;
 
-    const response = await fetchWithTimeout(
-      'https://overpass-api.de/api/interpreter',
-      {
-        method: 'POST',
-        body: `data=${encodeURIComponent(query)}`,
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': 'FoodieFinder/2.0 (contact@sassyconsultingllc.com)',
-        },
+    const init: RequestInit = {
+      method: 'POST',
+      body: `data=${encodeURIComponent(query)}`,
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'FoodieFinder/2.0 (contact@sassyconsultingllc.com)',
       },
-      20_000
-    );
+    };
+    // overpass-api.de regularly sheds load with 429/5xx (a 521 knocked OSM out
+    // of a live search on 2026-11-09). Fall back to one public mirror on an
+    // HTTP error. A timeout is not retried, to keep worst-case latency bounded.
+    let response = await fetchWithTimeout(OVERPASS_ENDPOINTS[0], init, 20_000);
     if (!response.ok) {
-      console.warn(`[Scraper] Overpass status ${response.status}`);
+      console.warn(`[Scraper] Overpass status ${response.status}; trying mirror`);
+      response = await fetchWithTimeout(OVERPASS_ENDPOINTS[1], init, 15_000);
+    }
+    if (!response.ok) {
+      console.warn(`[Scraper] Overpass mirror status ${response.status}`);
       return [];
     }
     const data: any = await response.json();

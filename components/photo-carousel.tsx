@@ -11,13 +11,13 @@
 import { Image } from "expo-image";
 import React, { useState, useRef, useCallback, useMemo } from "react";
 import {
-  Dimensions,
   FlatList,
   Modal,
   Pressable,
   StyleSheet,
   View,
   ViewToken,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -26,19 +26,27 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Colors, AppColors, Spacing, BorderRadius } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const PHOTO_WIDTH = SCREEN_WIDTH - Spacing.lg * 2;
 const PHOTO_HEIGHT = 200;
 
 interface PhotoCarouselProps {
   photos: string[];
   restaurantName?: string;
+  /**
+   * Called once per URL that fails to load, so the parent can drop it too
+   * (e.g. hide the whole section when nothing is left to show).
+   */
+  onPhotoError?: (url: string) => void;
 }
 
-export function PhotoCarousel({ photos, restaurantName }: PhotoCarouselProps) {
+export function PhotoCarousel({ photos, restaurantName, onPhotoError }: PhotoCarouselProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
   const insets = useSafeAreaInsets();
+  // Live window size, not a module-level Dimensions.get() snapshot: that one
+  // is frozen at import time, so rotation, split-screen, foldables and
+  // tablets kept the old width (or 0 when the app loaded in the background).
+  const { width: screenWidth } = useWindowDimensions();
+  const photoWidth = Math.max(0, screenWidth - Spacing.lg * 2);
   
   const [activeIndex, setActiveIndex] = useState(0);
   const [fullscreenVisible, setFullscreenVisible] = useState(false);
@@ -49,9 +57,19 @@ export function PhotoCarousel({ photos, restaurantName }: PhotoCarouselProps) {
 
   // Search + merge can repeat the same photo_reference. Dedup so the
   // carousel never shows one image three times (CLAUDE.md Bug 1).
+  // URLs that failed to load (expired Google photo reference, upstream 403,
+  // offline). They are dropped from the carousel so a dead URL never renders
+  // as a blank slide that still counts toward "3/10".
+  const [failedPhotos, setFailedPhotos] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
+
   const uniquePhotos = useMemo(
-    () => Array.from(new Set((photos || []).filter(Boolean))),
-    [photos]
+    () =>
+      Array.from(new Set((photos || []).filter(Boolean))).filter(
+        (p) => !failedPhotos.has(p)
+      ),
+    [photos, failedPhotos]
   );
 
   const onViewableItemsChanged = useCallback(
@@ -114,7 +132,7 @@ export function PhotoCarousel({ photos, restaurantName }: PhotoCarouselProps) {
     >
       <Image
         source={{ uri: item }}
-        style={styles.photo}
+        style={[styles.photo, { width: photoWidth }]}
         contentFit="cover"
         transition={200}
         recyclingKey={item}
@@ -122,18 +140,25 @@ export function PhotoCarousel({ photos, restaurantName }: PhotoCarouselProps) {
         accessibilityLabel={`Photo ${index + 1}`}
         onError={() => {
           // Broken image URL (expired Google photo reference, etc.) — log
-          // at most once per url. expo-image's fallback is a blank box.
+          // once and drop it; expo-image's own fallback is a blank box.
           console.warn("[PhotoCarousel] image load failed", item);
+          onPhotoError?.(item);
+          setFailedPhotos((prev) => {
+            if (prev.has(item)) return prev;
+            const next = new Set(prev);
+            next.add(item);
+            return next;
+          });
         }}
       />
     </Pressable>
   );
 
   const renderFullscreenPhoto = ({ item, index }: { item: string; index: number }) => (
-    <View style={styles.fullscreenPhotoContainer}>
+    <View style={[styles.fullscreenPhotoContainer, { width: screenWidth }]}>
       <Image
         source={{ uri: item }}
-        style={styles.fullscreenPhoto}
+        style={[styles.fullscreenPhoto, { width: screenWidth }]}
         contentFit="contain"
         transition={200}
         recyclingKey={item}
@@ -160,7 +185,8 @@ export function PhotoCarousel({ photos, restaurantName }: PhotoCarouselProps) {
         showsHorizontalScrollIndicator={false}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
-        snapToInterval={PHOTO_WIDTH + Spacing.sm}
+        snapToInterval={photoWidth + Spacing.sm}
+        extraData={photoWidth}
         decelerationRate="fast"
         contentContainerStyle={styles.listContent}
       />
@@ -221,10 +247,11 @@ export function PhotoCarousel({ photos, restaurantName }: PhotoCarouselProps) {
             showsHorizontalScrollIndicator={false}
             initialScrollIndex={safeFullscreenIndex}
             getItemLayout={(_, index) => ({
-              length: SCREEN_WIDTH,
-              offset: SCREEN_WIDTH * index,
+              length: screenWidth,
+              offset: screenWidth * index,
               index,
             })}
+            extraData={screenWidth}
             onViewableItemsChanged={onFullscreenViewableItemsChanged}
             viewabilityConfig={viewabilityConfig}
           />
@@ -250,7 +277,6 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   photo: {
-    width: PHOTO_WIDTH,
     height: PHOTO_HEIGHT,
     borderRadius: BorderRadius.md,
   },
@@ -312,13 +338,11 @@ const styles = StyleSheet.create({
     padding: Spacing.sm,
   },
   fullscreenPhotoContainer: {
-    width: SCREEN_WIDTH,
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
   fullscreenPhoto: {
-    width: SCREEN_WIDTH,
     height: "100%",
   },
   fullscreenPagination: {

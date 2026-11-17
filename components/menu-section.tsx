@@ -18,12 +18,12 @@ import React, { useState, useCallback, useEffect } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Dimensions,
   FlatList,
   Modal,
   Pressable,
   StyleSheet,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -34,9 +34,12 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { getApiBaseUrl } from "@/constants/oauth";
 import { usePaywall } from "@/components/paywall-host";
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const MENU_PHOTO_WIDTH = SCREEN_WIDTH * 0.75;
-const MENU_PHOTO_HEIGHT = MENU_PHOTO_WIDTH * 1.3; // Menu aspect ratio (taller)
+// Menu pages show at 75% of the window width, capped so a tablet in landscape
+// doesn't get a page taller than the screen. The width itself is read live
+// inside MenuSection (useWindowDimensions), not frozen at import time.
+const MENU_PHOTO_WIDTH_RATIO = 0.75;
+const MENU_PHOTO_MAX_WIDTH = 480;
+const MENU_PHOTO_ASPECT = 1.3; // Menu aspect ratio (taller)
 
 function isSafeExternalUrl(url: string | null | undefined): url is string {
   if (!url || typeof url !== "string") return false;
@@ -109,6 +112,9 @@ export function MenuSection({
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
   const insets = useSafeAreaInsets();
+  const { width: screenWidth } = useWindowDimensions();
+  const menuPhotoWidth = Math.min(screenWidth * MENU_PHOTO_WIDTH_RATIO, MENU_PHOTO_MAX_WIDTH);
+  const menuPhotoHeight = menuPhotoWidth * MENU_PHOTO_ASPECT;
   const { guard } = usePaywall();
 
   const [fullscreenVisible, setFullscreenVisible] = useState(false);
@@ -473,7 +479,8 @@ export function MenuSection({
             data={allMenuPhotos}
             horizontal
             pagingEnabled={false}
-            snapToInterval={MENU_PHOTO_WIDTH + Spacing.sm}
+            snapToInterval={menuPhotoWidth + Spacing.sm}
+            extraData={menuPhotoWidth}
             decelerationRate="fast"
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.carouselContent}
@@ -484,10 +491,10 @@ export function MenuSection({
               typeof item === "string" && item.length > 0 ? item : `menu-${index}`
             }
             renderItem={({ item, index }) => (
-              <Pressable onPress={() => openFullscreen(index)}>
+              <Pressable accessibilityRole="imagebutton" accessibilityLabel={`Menu photo ${index + 1}. Tap to enlarge.`} onPress={() => openFullscreen(index)}>
                 <Image
                   source={{ uri: item }}
-                  style={styles.menuPhoto}
+                  style={[styles.menuPhoto, { width: menuPhotoWidth, height: menuPhotoHeight }]}
                   contentFit="cover"
                   transition={200}
                 />
@@ -578,7 +585,7 @@ export function MenuSection({
             <ThemedText style={styles.fullscreenTitle} numberOfLines={1}>
               {restaurantName} — Menu
             </ThemedText>
-            <Pressable onPress={() => setFullscreenVisible(false)} style={styles.closeButton}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close menu photos" hitSlop={8} onPress={() => setFullscreenVisible(false)} style={styles.closeButton}>
               <IconSymbol name="xmark" size={24} color={AppColors.white} />
             </Pressable>
           </View>
@@ -592,16 +599,17 @@ export function MenuSection({
             // this handler fullscreenIndex stayed frozen at whatever page was
             // opened and the counter never moved.
             onMomentumScrollEnd={(e) => {
-              const page = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+              const page = Math.round(e.nativeEvent.contentOffset.x / Math.max(1, screenWidth));
               setFullscreenIndex(Math.max(0, Math.min(page, allMenuPhotos.length - 1)));
             }}
-            getItemLayout={(_, index) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index })}
+            getItemLayout={(_, index) => ({ length: screenWidth, offset: screenWidth * index, index })}
+            extraData={screenWidth}
             keyExtractor={(item, index) =>
               typeof item === "string" && item.length > 0 ? `fs-${item}` : `fs-menu-${index}`
             }
             renderItem={({ item }) => (
-              <View style={{ width: SCREEN_WIDTH, flex: 1, justifyContent: "center", alignItems: "center" }}>
-                <Image source={{ uri: item }} style={{ width: SCREEN_WIDTH, height: "100%" }} contentFit="contain" />
+              <View style={{ width: screenWidth, flex: 1, justifyContent: "center", alignItems: "center" }}>
+                <Image source={{ uri: item }} style={{ width: screenWidth, height: "100%" }} contentFit="contain" />
               </View>
             )}
           />
@@ -671,8 +679,6 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   menuPhoto: {
-    width: MENU_PHOTO_WIDTH,
-    height: MENU_PHOTO_HEIGHT,
     borderRadius: BorderRadius.md,
   },
   countBadge: {

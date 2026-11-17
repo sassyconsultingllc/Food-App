@@ -62,7 +62,7 @@ export class ErrorBoundary extends Component<Props, State> {
               {this.state.error.toString()}
             </ThemedText>
           )}
-          <Pressable onPress={this.handleReset} style={styles.button}>
+          <Pressable accessibilityRole="button" onPress={this.handleReset} style={styles.button}>
             <Text style={styles.buttonText}>Try Again</Text>
           </Pressable>
         </ThemedView>

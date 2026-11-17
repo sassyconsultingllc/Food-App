@@ -224,6 +224,8 @@ export function transformServerRestaurant(serverRestaurant: any): Restaurant {
       (serverRestaurant.menuUrl ? { url: serverRestaurant.menuUrl } : undefined),
     sentiment: serverRestaurant.sentiment,
     reviewSummary: serverRestaurant.reviewSummary,
+    reviewAspects: Array.isArray(serverRestaurant.reviewAspects) ? serverRestaurant.reviewAspects : undefined,
+    editorialSummary: serverRestaurant.editorialSummary,
     dailySpecial: serverRestaurant.dailySpecial,
     lastUpdated: serverRestaurant.scrapedAt,
     dataSources: serverRestaurant.sources || [],

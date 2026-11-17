@@ -18,4 +18,15 @@ export default defineConfig([
     files: ["**/*.cjs", "**/*.mjs", "scripts/**"],
     languageOptions: { globals: globals.node },
   },
+  {
+    // eslint-plugin-react's "detect" calls context.getFilename(), which
+    // ESLint 10 removed, so every react/* rule crashes the run. Pinning the
+    // version skips the detection path entirely.
+    settings: { react: { version: "19.1" } },
+    rules: {
+      // Guards against HTML parser quirks; React Native <Text> renders raw
+      // apostrophes/quotes verbatim, so it only adds escaping noise here.
+      "react/no-unescaped-entities": "off",
+    },
+  },
 ]);

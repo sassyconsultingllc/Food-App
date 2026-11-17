@@ -164,12 +164,16 @@ function FavoriteItem({
 
           <View style={styles.favoriteActions}>
             <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`View details for ${restaurant.name}`}
               onPress={onViewDetails}
               style={[styles.viewDetailsButton, { backgroundColor: colors.accent }]}
             >
               <ThemedText style={styles.viewDetailsText}>View Details</ThemedText>
             </Pressable>
             <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Remove ${restaurant.name} from favorites`}
               onPress={onToggleFavorite}
               style={[styles.removeButton, { borderColor: AppColors.copper }]}
             >
@@ -308,7 +312,7 @@ export default function FavoritesScreen() {
   const ListHeader = useMemo(() => (
     favoriteRestaurants.length > 0 ? (
       <View style={styles.headerActions}>
-        <Pressable onPress={handleRandomFromFavorites}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Pick a random favorite" onPress={handleRandomFromFavorites}>
           <Animated.View
             style={[
               styles.randomButton,
@@ -329,7 +333,7 @@ export default function FavoritesScreen() {
             <ThemedText type="defaultSemiBold" style={{ flex: 1 }}>
               {randomPick.name}
             </ThemedText>
-            <Pressable onPress={() => router.push(`/restaurant/${randomPick.id}`)}>
+            <Pressable accessibilityRole="button" accessibilityLabel={`View ${randomPick.name}`} onPress={() => router.push(`/restaurant/${randomPick.id}`)}>
               <ThemedText style={{ color: colors.accent, fontWeight: '600' }}>View</ThemedText>
             </Pressable>
           </View>
@@ -379,6 +383,7 @@ export default function FavoritesScreen() {
             Tap the utensils icon on any restaurant to save it here.
           </ThemedText>
           <Pressable
+            accessibilityRole="button"
             onPress={() => router.push("/(tabs)/browse")}
             style={[styles.browseButton, { backgroundColor: colors.accent }]}
           >

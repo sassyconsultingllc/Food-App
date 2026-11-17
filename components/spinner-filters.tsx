@@ -102,6 +102,7 @@ export function SpinnerFiltersBar({
       >
         {/* Open Now - Always visible */}
         <Pressable
+          accessibilityState={{ selected: filters.openNow }}
           onPress={toggleOpenNow}
           focusable
           accessibilityRole="button"
@@ -151,6 +152,7 @@ export function SpinnerFiltersBar({
               {cuisine}
             </ThemedText>
             <Pressable
+              accessibilityLabel={`Remove ${cuisine} filter`}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 onFiltersChange({
@@ -301,6 +303,7 @@ function FilterModal({
         <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
           <ThemedText type="subtitle">Filters</ThemedText>
           <Pressable
+            accessibilityLabel="Close filters"
             onPress={onClose}
             hitSlop={12}
             focusable
@@ -318,6 +321,7 @@ function FilterModal({
               Availability
             </ThemedText>
             <Pressable
+              accessibilityState={{ selected: filters.openNow }}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 onFiltersChange({ ...filters, openNow: !filters.openNow });
@@ -358,6 +362,7 @@ function FilterModal({
             <View style={styles.optionGrid}>
               {EXCLUDE_OPTIONS.map((option) => (
                 <Pressable
+                  accessibilityState={{ selected: filters.excludeRecentDays === option.value }}
                   key={option.value}
                   onPress={() => setExcludeDays(option.value)}
                   focusable
@@ -394,6 +399,7 @@ function FilterModal({
             <View style={styles.optionGrid}>
               {PRICE_OPTIONS.map((price) => (
                 <Pressable
+                  accessibilityState={{ selected: filters.priceRanges.includes(price) }}
                   key={price}
                   onPress={() => togglePrice(price)}
                   focusable
@@ -430,6 +436,7 @@ function FilterModal({
             <View style={styles.cuisineGrid}>
               {availableCuisines.map((cuisine) => (
                 <Pressable
+                  accessibilityState={{ selected: filters.cuisineTypes.includes(cuisine) }}
                   key={cuisine}
                   onPress={() => toggleCuisine(cuisine)}
                   focusable

@@ -184,20 +184,34 @@ export async function cacheRestaurants(
         restaurant_count = excluded.restaurant_count
     `).bind(cacheKey, postalCode, countryCode || null, continent, now, expiresAt, JSON.stringify(sources), restaurants.length);
 
-    const deleteOld = db.prepare(`DELETE FROM restaurant_cache WHERE cache_key = ?`).bind(cacheKey);
+    // Prod's hand-made menu_photos has FOREIGN KEY (restaurant_id) REFERENCES
+    // restaurant_cache(id). Deleting (or REPLACE-ing, which deletes first) a
+    // row that has menu photos fails the whole batch, so that ZIP could never
+    // be re-cached. Keep those rows; the upsert below refreshes them in place.
+    const deleteOld = db.prepare(
+      `DELETE FROM restaurant_cache WHERE cache_key = ? AND id NOT IN (SELECT restaurant_id FROM menu_photos)`
+    ).bind(cacheKey);
 
     // `id` is a GLOBAL primary key, but the same restaurant legitimately
     // appears under multiple postal cache_keys (overlapping ZIPs in a metro).
     // deleteOld only clears the current key, so a restaurant already cached
     // under another ZIP collides on INSERT and aborts the whole batch —
-    // leaving the cache unwritable (observed: no writes since 2026-05). Use
-    // INSERT OR REPLACE so a cross-key collision updates the row to the
-    // current key instead of failing, and dedup intra-batch so the same id
-    // isn't bound twice. Proper long-term fix is a composite PK (cache_key,
-    // id) via migration; this keeps the cache functional without one.
+    // leaving the cache unwritable (observed: no writes since 2026-05). Upsert
+    // so a cross-key collision moves the row to the current key instead of
+    // failing (ON CONFLICT DO UPDATE, not OR REPLACE: REPLACE deletes the old
+    // row and trips the menu_photos foreign key), and dedup intra-batch so the
+    // same id isn't bound twice. Proper long-term fix is a composite PK
+    // (cache_key, id) via migration; this keeps the cache functional without one.
     const insertStmt = db.prepare(`
-      INSERT OR REPLACE INTO restaurant_cache (id, cache_key, source_id, name, country_code, data, created_at)
+      INSERT INTO restaurant_cache (id, cache_key, source_id, name, country_code, data, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        cache_key = excluded.cache_key,
+        source_id = excluded.source_id,
+        name = excluded.name,
+        country_code = excluded.country_code,
+        data = excluded.data,
+        created_at = excluded.created_at
     `);
     const seenIds = new Set<string>();
     const uniqueRestaurants = restaurants.filter(r => {
@@ -375,12 +389,14 @@ export async function cleanupExpiredCache(db: D1Database): Promise<number> {
     // produces a different separator and breaks lexicographic comparison.
     const nowIso = new Date().toISOString();
 
-    // First delete restaurants for expired postal codes
+    // First delete restaurants for expired postal codes, except rows that
+    // menu_photos points at (prod has a foreign key; see cacheRestaurants).
     await db.prepare(`
       DELETE FROM restaurant_cache
       WHERE cache_key IN (
         SELECT cache_key FROM postal_cache WHERE expires_at <= ?
       )
+      AND id NOT IN (SELECT restaurant_id FROM menu_photos)
     `).bind(nowIso).run();
 
     // Then delete the expired postal codes

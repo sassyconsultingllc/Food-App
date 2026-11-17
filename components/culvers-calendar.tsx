@@ -96,6 +96,8 @@ export function CulversFlavorCalendar({ zipCode, compact = false }: CulversFlavo
   if (error || !data) {
     return (
       <Pressable 
+        accessibilityRole="link"
+        accessibilityLabel="Open the Culver's website"
         onPress={openCulversWebsite}
         style={[styles.container, styles.error, { backgroundColor: colors.cardBackground }]}
       >
@@ -113,6 +115,8 @@ export function CulversFlavorCalendar({ zipCode, compact = false }: CulversFlavo
   if (compact) {
     return (
       <Pressable 
+        accessibilityRole="link"
+        accessibilityHint="Opens the Culver's website"
         onPress={openCulversWebsite}
         style={[styles.compactContainer, { backgroundColor: colors.cardBackground }]}
       >
@@ -151,7 +155,7 @@ export function CulversFlavorCalendar({ zipCode, compact = false }: CulversFlavo
             </ThemedText>
           </View>
         </View>
-        <Pressable onPress={openCulversWebsite} hitSlop={8}>
+        <Pressable accessibilityRole="link" accessibilityLabel="Open the Culver's website" onPress={openCulversWebsite} hitSlop={8}>
           <IconSymbol name="arrow.up.right.square" size={20} color={colors.accent} />
         </Pressable>
       </View>
@@ -221,6 +225,7 @@ export function CulversFlavorCalendar({ zipCode, compact = false }: CulversFlavo
       
       {/* View Full Calendar Link */}
       <Pressable 
+        accessibilityRole="link"
         onPress={openCulversWebsite}
         style={[styles.calendarLink, { borderTopColor: colors.border }]}
       >

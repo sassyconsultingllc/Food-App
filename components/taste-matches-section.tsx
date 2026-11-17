@@ -45,9 +45,10 @@ export function TasteMatchesSection({
   // Memoize the per-card style objects so the Pressable's render-style
   // function doesn't allocate a fresh `{backgroundColor, borderColor, ...}`
   // object on every render (which prevents StyleSheet caching and creates
-  // unnecessary re-render churn on horizontal scroll). These must stay above
-  // the early return below: hooks after it would change the hook count when
-  // the user's first favorite appears, and React would throw.
+  // unnecessary re-render churn on horizontal scroll).
+  // These must stay above the early return below: when matches arrive after
+  // an empty first render, a hook count change throws "Rendered more hooks
+  // than during the previous render" and takes down the screen.
   const cardBaseStyle = useMemo(
     () => ({
       backgroundColor: colors.surface,
@@ -102,6 +103,8 @@ export function TasteMatchesSection({
       {/* Tab switcher */}
       <View style={[styles.tabRow, { borderColor: colors.border }]}>
         <Pressable
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === "local" }}
           onPress={() => {
             Haptics.selectionAsync();
             setActiveTab("local");
@@ -128,6 +131,8 @@ export function TasteMatchesSection({
           </ThemedText>
         </Pressable>
         <Pressable
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === "travel" }}
           onPress={() => {
             Haptics.selectionAsync();
             setActiveTab("travel");
@@ -165,6 +170,8 @@ export function TasteMatchesSection({
         >
           {matches.map((m) => (
             <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`View details for ${m.restaurant.name}`}
               key={m.restaurant.id}
               onPress={() => handlePress(m.restaurant.id)}
               style={({ pressed }) => [
@@ -225,6 +232,7 @@ export function TasteMatchesSection({
 
       {matches.length === 0 && otherHasResults && (
         <Pressable
+          accessibilityRole="button"
           onPress={() => setActiveTab(activeTab === "local" ? "travel" : "local")}
           style={styles.switchHint}
         >

@@ -63,6 +63,10 @@ export function RestaurantCard({
     ? getOpenStatus(restaurant.hours, restaurant.utcOffsetMinutes)
     : { isOpen: false, statusText: "Hours unknown", todayHours: undefined };
 
+  // The single most telling review verdict ("Best oceanside coffee"), so the
+  // list says why to go, not just a star count. Complaints stay on the detail page.
+  const topAspect = restaurant.reviewAspects?.find((a) => a.verdict !== "bad");
+
   return (
     <Pressable
       onPress={handlePress}
@@ -169,6 +173,17 @@ export function RestaurantCard({
               {(restaurant.ratings?.aggregated ?? 0).toFixed(1)}
             </ThemedText>
           </View>
+
+          {topAspect && (
+            <View
+              style={[styles.aspectBadge, { backgroundColor: AppColors.skyBlue + '20' }]}
+              accessibilityLabel={`Reviewers say: ${topAspect.label}`}
+            >
+              <ThemedText style={[styles.aspectText, { color: AppColors.skyBlue }]} numberOfLines={1}>
+                {topAspect.label}
+              </ThemedText>
+            </View>
+          )}
 
           {restaurant.dailySpecial && (
             <View style={[styles.specialBadge, { backgroundColor: AppColors.lightOrange }]}>
@@ -288,6 +303,16 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 6,
     marginTop: 4,
+  },
+  aspectBadge: {
+    flexShrink: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.sm,
+  },
+  aspectText: {
+    fontSize: 11,
+    fontWeight: "600",
   },
   ratingBadge: {
     flexDirection: "row",

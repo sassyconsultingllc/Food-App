@@ -8,7 +8,7 @@
  * Backend: getPublicNotes / addPublicNote via tRPC.
  */
 
-import React, { useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   View,
   StyleSheet,
@@ -64,7 +64,8 @@ function timeAgo(ts: number): string {
   const days = Math.floor(hours / 24);
   if (days < 30) return `${days}d ago`;
   const months = Math.floor(days / 30);
-  return `${months}mo ago`;
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.max(1, Math.floor(days / 365))}y ago`;
 }
 
 export function PublicNotesSection({
@@ -87,6 +88,7 @@ export function PublicNotesSection({
   const [newNote, setNewNote] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [showInput, setShowInput] = useState(false);
+  const [showAllNotes, setShowAllNotes] = useState(false);
   const inputAnchorRef = useRef<View>(null);
 
   // Scroll the input into view above the keyboard. Without this, tapping
@@ -146,7 +148,13 @@ export function PublicNotesSection({
     },
   });
 
-  const notes: PublicNote[] = notesQuery.data?.notes ?? [];
+  // Newest first regardless of the order the backend stored them in.
+  const rawNotes = notesQuery.data?.notes;
+  const notes: PublicNote[] = useMemo(
+    () => [...(rawNotes ?? [])].sort((a, b) => b.ts - a.ts),
+    [rawNotes]
+  );
+  const visibleNotes = showAllNotes ? notes : notes.slice(0, 10);
   const loading = notesQuery.isLoading;
   const submitting = addNoteMutation.isPending;
 
@@ -263,13 +271,26 @@ export function PublicNotesSection({
         </View>
       ) : notes.length > 0 ? (
         <View style={styles.notesList}>
-          {notes.slice(0, 10).map((note, idx) => (
+          {visibleNotes.map((note, idx) => (
             <View key={`${note.ts}-${idx}`}>{renderNote({ item: note })}</View>
           ))}
           {notes.length > 10 && (
-            <ThemedText style={[styles.moreNotesText, { color: colors.textSecondary }]}>
-              + {notes.length - 10} more tip{notes.length - 10 === 1 ? "" : "s"}
-            </ThemedText>
+            <Pressable
+              onPress={() => setShowAllNotes((v) => !v)}
+              accessibilityRole="button"
+              accessibilityLabel={
+                showAllNotes
+                  ? "Show fewer community tips"
+                  : `Show all ${notes.length} community tips`
+              }
+              hitSlop={8}
+            >
+              <ThemedText style={[styles.moreNotesText, { color: AppColors.skyBlue, fontWeight: "600" }]}>
+                {showAllNotes
+                  ? "Show fewer tips"
+                  : `Show all ${notes.length} tips`}
+              </ThemedText>
+            </Pressable>
           )}
         </View>
       ) : (

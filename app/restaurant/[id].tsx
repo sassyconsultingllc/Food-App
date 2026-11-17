@@ -10,7 +10,7 @@ import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import * as Haptics from "expo-haptics";
 import * as Linking from "expo-linking";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -39,6 +39,8 @@ import { useLicense } from "@/hooks/use-license";
 import { FREE_TIER_LIMITS } from "@/lib/license";
 import { shareRestaurant } from "@/utils/share-utils";
 import { formatDisplayAddress, formatMapsAddress } from "@/utils/address-utils";
+import { getLocalDayKey, getOpenStatus } from "@/utils/hours-utils";
+import type { HoursOfOperation } from "@/types/restaurant";
 import { trpc } from "@/lib/trpc";
 import { transformServerRestaurant } from "@/utils/restaurant-transform";
 import { normalizeHours } from "@/utils/culvers-hours";
@@ -84,6 +86,18 @@ async function safeOpenUrl(url: string | null | undefined): Promise<void> {
     );
   }
 }
+
+// Monday-first, the order people read hours in. The stored object's own key
+// order depends on which scraper source wrote it.
+const HOURS_DAY_ORDER: (keyof HoursOfOperation)[] = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+];
 
 export default function RestaurantDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -177,6 +191,21 @@ export default function RestaurantDetailScreen() {
   const currentNotes = restaurant ? (getRestaurantNotes(restaurant.id) || '') : '';
   const [notesModalVisible, setNotesModalVisible] = useState(false);
 
+  // Photo URLs that failed to load (expired Google photo reference, upstream
+  // 403, offline). Shared by the header image and the gallery: the header
+  // falls through to the next candidate and finally the placeholder, and the
+  // gallery section goes away once nothing in it can load.
+  const [failedPhotoUrls, setFailedPhotoUrls] = useState<string[]>([]);
+  const markPhotoFailed = useCallback((url: string) => {
+    setFailedPhotoUrls((prev) => (prev.includes(url) ? prev : [...prev, url]));
+  }, []);
+  const galleryPhotos = useMemo(
+    () => foodPhotos.filter((url) => !failedPhotoUrls.includes(url)),
+    [foodPhotos, failedPhotoUrls]
+  );
+  // Same idea for the "More Like This" thumbnails: fall back to the icon tile.
+  const [failedThumbUrls, setFailedThumbUrls] = useState<string[]>([]);
+
   // Depend on a stable boolean, not the restaurant object: a background cache
   // refresh hands back a new object reference each render, which would re-fire
   // these effects and re-stamp "recently viewed", corrupting recency order.
@@ -226,6 +255,51 @@ export default function RestaurantDetailScreen() {
     );
   }
 
+  // The by-id server fallback failed outright (offline, timeout, 5xx). The
+  // worker answers a genuinely missing id with { restaurant: null }, so an
+  // error here means "couldn't reach it", not "doesn't exist" — say so and
+  // offer a retry instead of the dead-end "not found" screen.
+  if (!restaurant && serverEnabled && serverQuery.isError) {
+    return (
+      <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.errorContainer}>
+          <IconSymbol name="exclamationmark.circle" size={56} color={colors.border} />
+          <ThemedText type="subtitle">Couldn&apos;t load this restaurant</ThemedText>
+          <ThemedText
+            style={{ color: colors.textSecondary, textAlign: "center", paddingHorizontal: Spacing.xl, lineHeight: 22 }}
+          >
+            We couldn&apos;t reach the server. Check your connection and try again.
+          </ThemedText>
+          <Pressable
+            onPress={() => serverQuery.refetch()}
+            disabled={serverQuery.isFetching}
+            accessibilityRole="button"
+            accessibilityLabel="Try loading the restaurant again"
+            style={[
+              styles.backButton,
+              { backgroundColor: colors.accent, opacity: serverQuery.isFetching ? 0.7 : 1 },
+            ]}
+          >
+            {serverQuery.isFetching ? (
+              <ActivityIndicator size="small" color={AppColors.white} />
+            ) : (
+              <ThemedText style={styles.backButtonText}>Try Again</ThemedText>
+            )}
+          </Pressable>
+          <Pressable
+            onPress={() => router.back()}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+            hitSlop={8}
+          >
+            <ThemedText style={{ color: colors.textSecondary }}>Go Back</ThemedText>
+          </Pressable>
+        </View>
+      </ThemedView>
+    );
+  }
+
   // Only show "not found" AFTER both the local cache and the server fallback
   // have settled and the restaurant genuinely doesn't exist anywhere.
   if (!restaurant) {
@@ -241,6 +315,7 @@ export default function RestaurantDetailScreen() {
             We couldn&apos;t load this restaurant. It may no longer be available, or the details expired from our cache — try searching for it again.
           </ThemedText>
           <Pressable
+            accessibilityRole="button"
             onPress={() => router.back()}
             style={[styles.backButton, { backgroundColor: colors.accent }]}
           >
@@ -252,6 +327,45 @@ export default function RestaurantDetailScreen() {
   }
 
   const favorite = isFavorite(restaurant.id);
+
+  // Same preference order as before (imageUrl, classified food photo, any
+  // photo), minus anything that already failed to load.
+  const heroUrl = [
+    restaurant.imageUrl,
+    ...foodPhotos,
+    ...(restaurant.photos || []),
+  ].find((u): u is string => !!u && !failedPhotoUrls.includes(u));
+
+  // Hours rows in calendar order with today (on the restaurant's clock)
+  // flagged, followed by any non-standard keys a source may have written.
+  const todayKey = getLocalDayKey(restaurant.utcOffsetMinutes);
+  const hoursByDay = (restaurant.hours ?? {}) as Record<string, string | undefined>;
+  const hoursRows = [
+    ...HOURS_DAY_ORDER.filter((day) => !!hoursByDay[day]),
+    ...Object.keys(hoursByDay).filter(
+      (key) => !(HOURS_DAY_ORDER as string[]).includes(key) && !!hoursByDay[key]
+    ),
+  ].map((key) => ({
+    key,
+    label: key.charAt(0).toUpperCase() + key.slice(1),
+    hours: hoursByDay[key] as string,
+    isToday: key === todayKey,
+  }));
+  // Only claim open/closed when today's hours are actually known —
+  // getOpenStatus assumes "open" for a day with no entry.
+  const openStatus = hoursByDay[todayKey]
+    ? getOpenStatus(restaurant.hours, restaurant.utcOffsetMinutes)
+    : null;
+
+  // "About" prefers Google's editorial blurb. `description` is filled from the
+  // review summary (transformServerRestaurant), so don't repeat it here when
+  // "What People Say" is already showing that same text.
+  const reviewSummaryShown = !!restaurant.sentiment && !!restaurant.reviewSummary;
+  const aboutText =
+    restaurant.editorialSummary ||
+    (reviewSummaryShown && restaurant.description === restaurant.reviewSummary
+      ? undefined
+      : restaurant.description);
 
   const handleFavoritePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -307,11 +421,14 @@ export default function RestaurantDetailScreen() {
       
       {/* Header Image — prefer classified food photo over any menu page */}
       <View style={styles.headerImage}>
-        {(restaurant.imageUrl || foodPhotos.length > 0 || (restaurant.photos && restaurant.photos.length > 0)) ? (
+        {heroUrl ? (
           <Image
-            source={{ uri: restaurant.imageUrl || foodPhotos[0] || restaurant.photos![0] }}
+            source={{ uri: heroUrl }}
             style={styles.image}
             contentFit="cover"
+            transition={200}
+            accessibilityLabel={`Photo of ${restaurant.name}`}
+            onError={() => markPhotoFailed(heroUrl)}
           />
         ) : (
           <View style={[styles.imagePlaceholder, { backgroundColor: colors.headerBackground }]}>
@@ -456,7 +573,7 @@ export default function RestaurantDetailScreen() {
 
         {/* Photo Gallery — immediately after title/specials so the menu
             isn't buried under Contact (CLAUDE.md Bug 2). */}
-        {foodPhotos.length > 0 && (
+        {galleryPhotos.length > 0 && (
           <View style={styles.photosSection}>
             <View style={[styles.sectionHeader, { paddingHorizontal: Spacing.lg }]}>
               <IconSymbol name="photo.fill" size={20} color={colors.accent} />
@@ -464,7 +581,11 @@ export default function RestaurantDetailScreen() {
                 Photos
               </ThemedText>
             </View>
-            <PhotoCarousel photos={foodPhotos} restaurantName={restaurant.name} />
+            <PhotoCarousel
+              photos={galleryPhotos}
+              restaurantName={restaurant.name}
+              onPhotoError={markPhotoFailed}
+            />
           </View>
         )}
 
@@ -712,8 +833,64 @@ export default function RestaurantDetailScreen() {
               </ThemedText>
             )}
             
-            {/* Highlights */}
-            {restaurant.sentiment.highlights && restaurant.sentiment.highlights.length > 0 && (
+            {/* Review verdicts: what this place is actually best / worst at */}
+            {restaurant.reviewAspects && restaurant.reviewAspects.length > 0 ? (
+              <>
+                {restaurant.reviewAspects.some((a) => a.verdict !== 'bad') && (
+                  <View style={styles.sentimentList}>
+                    <ThemedText type="defaultSemiBold" style={{ marginBottom: 4 }}>Reviewers say:</ThemedText>
+                    <View style={styles.tagContainer}>
+                      {restaurant.reviewAspects
+                        .filter((a) => a.verdict !== 'bad')
+                        .map((a) => {
+                          const tint = a.verdict === 'best' ? AppColors.copper : AppColors.skyBlue;
+                          return (
+                            <View
+                              key={a.key}
+                              style={[
+                                styles.tag,
+                                styles.aspectTag,
+                                { backgroundColor: a.verdict === 'best' ? tint : tint + '20' },
+                              ]}
+                              accessibilityLabel={`${a.label}, from ${a.positive} positive review mention${a.positive === 1 ? '' : 's'}`}
+                            >
+                              {a.verdict === 'best' && (
+                                <IconSymbol name="star.fill" size={12} color={AppColors.white} />
+                              )}
+                              <ThemedText
+                                style={[styles.tagText, { color: a.verdict === 'best' ? AppColors.white : tint, fontWeight: a.verdict === 'good' ? '400' : '600' }]}
+                              >
+                                {a.label}
+                              </ThemedText>
+                            </View>
+                          );
+                        })}
+                    </View>
+                  </View>
+                )}
+                {restaurant.reviewAspects.some((a) => a.verdict === 'bad') && (
+                  <View style={styles.sentimentList}>
+                    <ThemedText type="defaultSemiBold" style={{ marginBottom: 4 }}>Watch out for:</ThemedText>
+                    <View style={styles.tagContainer}>
+                      {restaurant.reviewAspects
+                        .filter((a) => a.verdict === 'bad')
+                        .map((a) => (
+                          <View
+                            key={a.key}
+                            style={[styles.tag, { backgroundColor: AppColors.copper + '20' }]}
+                            accessibilityLabel={`${a.label}, from ${a.negative} negative review mention${a.negative === 1 ? '' : 's'}`}
+                          >
+                            <ThemedText style={[styles.tagText, { color: AppColors.copper }]}>{a.label}</ThemedText>
+                          </View>
+                        ))}
+                    </View>
+                  </View>
+                )}
+              </>
+            ) : null}
+
+            {/* Highlights (rating-derived fallback when there is no review text) */}
+            {!restaurant.reviewAspects?.length && restaurant.sentiment.highlights && restaurant.sentiment.highlights.length > 0 && (
               <View style={styles.sentimentList}>
                 <ThemedText type="defaultSemiBold" style={{ marginBottom: 4 }}>Praised for:</ThemedText>
                 <View style={styles.tagContainer}>
@@ -727,7 +904,7 @@ export default function RestaurantDetailScreen() {
             )}
             
             {/* Warnings */}
-            {restaurant.sentiment.warnings && restaurant.sentiment.warnings.length > 0 && (
+            {!restaurant.reviewAspects?.length && restaurant.sentiment.warnings && restaurant.sentiment.warnings.length > 0 && (
               <View style={styles.sentimentList}>
                 <ThemedText type="defaultSemiBold" style={{ marginBottom: 4 }}>Watch out for:</ThemedText>
                 <View style={styles.tagContainer}>
@@ -782,6 +959,7 @@ export default function RestaurantDetailScreen() {
                   // so the thumbnail resolves and the card matches the rest of
                   // the UI.
                   if (!similarRestaurant) return null;
+                  const thumbUrl = similarRestaurant.imageUrl || similarRestaurant.photos?.[0];
 
                   return (
                     <Pressable
@@ -795,11 +973,16 @@ export default function RestaurantDetailScreen() {
                       accessibilityLabel={`View details for ${similarRestaurant.name}`}
                       accessibilityHint={`${similarRestaurant.cuisineType}${similarRestaurant.priceRange ? `, ${similarRestaurant.priceRange}` : ""}`}
                     >
-                      {(similarRestaurant.imageUrl || similarRestaurant.photos?.[0]) ? (
+                      {thumbUrl && !failedThumbUrls.includes(thumbUrl) ? (
                         <Image
-                          source={{ uri: similarRestaurant.imageUrl || similarRestaurant.photos![0] }}
+                          source={{ uri: thumbUrl }}
                           style={styles.similarImage}
                           contentFit="cover"
+                          onError={() =>
+                            setFailedThumbUrls((prev) =>
+                              prev.includes(thumbUrl) ? prev : [...prev, thumbUrl]
+                            )
+                          }
                         />
                       ) : (
                         <View style={[styles.similarImagePlaceholder, { backgroundColor: colors.surface }]}>
@@ -911,31 +1094,64 @@ export default function RestaurantDetailScreen() {
         )}
 
         {/* Hours of Operation */}
-        {restaurant.hours && (
+        {hoursRows.length > 0 && (
           <View style={[styles.section, { backgroundColor: colors.cardBackground }]}>
-            <ThemedText type="subtitle" style={styles.sectionTitle}>
-              Hours
-            </ThemedText>
+            <View style={styles.sectionHeader}>
+              <IconSymbol name="clock.fill" size={20} color={colors.accent} />
+              <ThemedText type="subtitle" style={styles.sectionTitle}>
+                Hours
+              </ThemedText>
+              {openStatus ? (
+                <View
+                  style={[
+                    styles.privatePill,
+                    { backgroundColor: openStatus.isOpen ? AppColors.success : AppColors.copper },
+                  ]}
+                >
+                  <ThemedText style={styles.privatePillText}>
+                    {openStatus.isOpen ? "Open" : "Closed"}
+                  </ThemedText>
+                </View>
+              ) : null}
+            </View>
+            {openStatus?.nextChange ? (
+              <ThemedText style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
+                {openStatus.nextChange}
+              </ThemedText>
+            ) : null}
             
-            {Object.entries(restaurant.hours).map(([day, hours]) => (
-              <View key={day} style={styles.hoursRow}>
-                <ThemedText style={styles.dayText}>
-                  {day.charAt(0).toUpperCase() + day.slice(1)}
+            {hoursRows.map(({ key, label, hours, isToday }) => (
+              <View
+                key={key}
+                style={styles.hoursRow}
+                accessible
+                accessibilityLabel={`${label}${isToday ? ", today" : ""}: ${hours}`}
+              >
+                <ThemedText style={[styles.dayText, isToday && styles.hoursToday]}>
+                  {label}
                 </ThemedText>
-                <ThemedText style={{ color: colors.textSecondary }}>{hours}</ThemedText>
+                <ThemedText
+                  style={[
+                    styles.hoursValue,
+                    { color: isToday ? colors.text : colors.textSecondary },
+                    isToday && styles.hoursToday,
+                  ]}
+                >
+                  {hours}
+                </ThemedText>
               </View>
             ))}
           </View>
         )}
 
         {/* Description */}
-        {restaurant.description && (
+        {!!aboutText && (
           <View style={[styles.section, { backgroundColor: colors.cardBackground }]}>
             <ThemedText type="subtitle" style={styles.sectionTitle}>
               About
             </ThemedText>
             <ThemedText style={{ color: colors.textSecondary, lineHeight: 22 }}>
-              {restaurant.description}
+              {aboutText}
             </ThemedText>
           </View>
         )}
@@ -1215,6 +1431,11 @@ const styles = StyleSheet.create({
   tagText: {
     fontSize: 13,
   },
+  aspectTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
   // Similar restaurants styles
   similarLoading: {
     flexDirection: "row",
@@ -1321,6 +1542,15 @@ const styles = StyleSheet.create({
   },
   dayText: {
     fontWeight: "500",
+  },
+  hoursToday: {
+    fontWeight: "700",
+  },
+  hoursValue: {
+    // Split-shift strings are long; let them wrap instead of overflowing.
+    flexShrink: 1,
+    textAlign: "right",
+    marginLeft: Spacing.md,
   },
   footer: {
     alignItems: "center",
