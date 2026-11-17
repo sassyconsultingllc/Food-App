@@ -29,6 +29,13 @@ Read this before changing anything. Search for existing code before writing new 
 - `metrics-push` / `push-metrics-endpoint` tests can hit vitest's 5 s timeout when the machine is busy; they pass on their own (`--testTimeout=30000`).
 - `__tests__/scraper-rag.test.ts` makes real network calls (Overpass and others) and times out intermittently. A timeout there is not a regression.
 
+### Patched dependencies (check when upgrading Expo / Metro)
+Security fixes that upstream ships in a form our dependencies cannot load, wired in through `overrides` in `package.json`:
+- `vendor/decode-uri-component`: CommonJS build of 0.5.1 (MIT), because 0.5.x is ESM-only and `query-string` 7 (used by expo-router, so it ships in the app) `require()`s it. Remove the root dependency and override once nothing depends on `decode-uri-component` < 0.5.1.
+- `vendor/image-size`: keeps the 1.x call shape (sync, Buffer or file path) that Metro 0.83 uses in `src/Assets.js`, backed by the real image-size 2.x installed as the `image-size-v2` alias. Remove both when Metro depends on image-size >= 2.0.3.
+- `uuid` is overridden to ^11.1.1 (12+ is ESM-only and `xcode` / `@expo/ngrok` `require()` it). `glob@>=9` and `minimatch@>=7` are overridden to 14 / 11; glob 7 and minimatch 3 are left alone.
+- picomatch <= 4.0.7 (GHSA-fc5q-39xc-vjpf) has no fixed release yet; only build/test/lint config patterns reach it.
+
 ## How state is shared (read before touching storage or location)
 - `useRestaurantStorage()` (`hooks/use-restaurant-storage.ts`) is called by every screen, and all tabs stay mounted. Preferences, favorites and personal notes therefore live in shared stores (`utils/shared-store.ts`): every hook instance reads, subscribes and publishes there. Never keep a per-screen copy and write it back to AsyncStorage. That was the cause of the zip, favorites and notes bugs fixed in 1.0.5 (vc31).
 - Saves build on `store.get()`, not on React state. Background/unmount flushes write the shared value only when a module-level pending flag is set. Edits made before storage has loaded are ignored (with a warning) rather than replacing saved data.

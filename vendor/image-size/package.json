@@ -1,0 +1,8 @@
+{
+  "name": "image-size",
+  "version": "2.0.3-v1compat",
+  "description": "image-size 1.x call shape (sync, Buffer or path) backed by image-size 2.0.3, for Metro",
+  "license": "MIT",
+  "main": "index.js",
+  "type": "commonjs"
+}
