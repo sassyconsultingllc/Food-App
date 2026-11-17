@@ -1,0 +1,6 @@
+Ravintolasivut näyttävät nyt kaikki kuvat saman kuvan toistamisen sijaan.
+Ruokalista on heti kuvien alla, ja siinä on "View Full Menu" -painike, jos se on saatavilla.
+Yksityiset muistiinpanot ovat ravintolan sivulla.
+Yhteisön vinkit varoittavat ennen puhelinnumeron tai sähköpostin julkaisemista.
+"Use My Location" toimii nyt aina, ja millä tahansa näytöllä valittu sijainti koskee kaikkia näyttöjä.
+Suosikit ja muistiinpanot pysyvät synkronoituina kaikilla välilehdillä.

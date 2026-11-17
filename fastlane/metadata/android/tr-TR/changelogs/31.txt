@@ -1,0 +1,6 @@
+Restoran sayfaları artık aynı fotoğrafı tekrarlamak yerine tüm farklı fotoğrafları gösteriyor.
+Menü, fotoğrafların hemen altında; varsa "View Full Menu" düğmesiyle birlikte.
+Özel kişisel notlar restoran sayfasında.
+Topluluk ipuçları, telefon numarası veya e-posta paylaşmadan önce uyarır.
+"Use My Location" artık her zaman çalışıyor ve herhangi bir ekranda değiştirilen konum tüm ekranlarda arama için kullanılıyor.
+Favoriler ve kişisel notlar tüm sekmelerde senkronize kalır.

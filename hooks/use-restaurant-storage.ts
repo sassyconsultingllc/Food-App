@@ -22,6 +22,11 @@ import {
 import { trpc } from "@/lib/trpc";
 import { useRestaurantSearchContext } from "@/context/restaurant-search-context";
 import { transformServerRestaurant } from "@/utils/restaurant-transform";
+import {
+  favoritesStore,
+  personalNotesStore,
+  preferencesStore,
+} from "@/utils/shared-store";
 
 const STORAGE_KEYS = {
   PREFERENCES: "foodie_finder_preferences",
@@ -34,6 +39,12 @@ const STORAGE_KEYS = {
 
 const MAX_RETRIES = 3;
 const CACHE_DURATION_MS = 30 * 60 * 1000; // 30 minutes
+
+// Pending-write flags are module-level (like the shared stores) so whichever
+// screen sees the app go to the background flushes the latest shared value,
+// and screens with nothing new to save don't write at all.
+let favoritesPendingWrite = false;
+let notesPendingWrite = false;
 
 /**
  * Retry an async operation with exponential backoff
@@ -54,13 +65,22 @@ async function retryOperation<T>(
 }
 
 export function useRestaurantStorage() {
-  const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_PREFERENCES);
-  const [prefsLoading, setPrefsLoading] = useState(true);
+  // Start from the shared snapshots when another screen already loaded them,
+  // so a freshly mounted screen (e.g. the detail page) never flashes stale
+  // defaults or an empty favorites/notes list.
+  const [preferences, setPreferences] = useState<UserPreferences>(
+    () => preferencesStore.get() ?? DEFAULT_PREFERENCES
+  );
+  const [prefsLoading, setPrefsLoading] = useState(() => preferencesStore.get() === null);
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [restaurantsLoading, setRestaurantsLoading] = useState(false);
   const [restaurantsError, setRestaurantsError] = useState<string | null>(null);
-  const [personalNotes, setPersonalNotes] = useState<Record<string, string>>({});
-  const [favoritesData, setFavoritesData] = useState<Record<string, Restaurant>>({});
+  const [personalNotes, setPersonalNotes] = useState<Record<string, string>>(
+    () => personalNotesStore.get() ?? {}
+  );
+  const [favoritesData, setFavoritesData] = useState<Record<string, Restaurant>>(
+    () => favoritesStore.get() ?? {}
+  );
   const [cacheLoaded, setCacheLoaded] = useState(false);
 
   // Shared search params from context so all tabs stay in sync
@@ -72,6 +92,21 @@ export function useRestaurantStorage() {
   useEffect(() => {
     preferencesRef.current = preferences;
   }, [preferences]);
+
+  // Every screen calls this hook separately; keep them all on the same
+  // preferences, favorites and notes so a change on one tab shows on every
+  // other tab and no stale copy can be written back over it.
+  useEffect(() => {
+    const unsubscribers = [
+      preferencesStore.subscribe((next) => {
+        preferencesRef.current = next;
+        setPreferences(next);
+      }),
+      favoritesStore.subscribe(setFavoritesData),
+      personalNotesStore.subscribe(setPersonalNotes),
+    ];
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+  }, []);
 
   // Load preferences from storage - sync search params in same effect to avoid race.
   // Uses multiGet to collapse 3+ sequential JNI bridge hops into a single call —
@@ -96,7 +131,6 @@ export function useRestaurantStorage() {
         if (prefsJson) {
           const parsed = JSON.parse(prefsJson);
           loadedPrefs = { ...DEFAULT_PREFERENCES, ...parsed };
-          setPreferences(loadedPrefs);
           // Migrate legacy key to canonical storage if needed
           if (!stored && legacyStored) {
             await AsyncStorage.setItem(
@@ -106,26 +140,29 @@ export function useRestaurantStorage() {
           }
         }
 
-        // Also load personal notes
-        if (notesStored) {
-          setPersonalNotes(JSON.parse(notesStored));
+        // Also load personal notes. Another screen's copy (loaded or edited
+        // while this read was in flight) wins over what storage handed us.
+        if (personalNotesStore.get() === null) {
+          personalNotesStore.publish(notesStored ? JSON.parse(notesStored) : {});
         }
 
         // Load favorites data (full restaurant snapshots, independent of search cache)
         if (favoritesStored) {
           try {
             const parsedFavorites: Record<string, Restaurant> = JSON.parse(favoritesStored);
-            setFavoritesData(parsedFavorites);
+            if (favoritesStore.get() === null) {
+              favoritesStore.publish(parsedFavorites);
+            }
             // Reconcile: preferences.favorites should match the keys of favoritesData.
             // Drop any zombie IDs that have no backing data.
             const reconciledIds = Object.keys(parsedFavorites);
             const prefIds = loadedPrefs.favorites || [];
             const needsReconcile =
-              reconciledIds.length !== prefIds.length ||
-              reconciledIds.some((id) => !prefIds.includes(id));
+              preferencesStore.get() === null &&
+              (reconciledIds.length !== prefIds.length ||
+              reconciledIds.some((id) => !prefIds.includes(id)));
             if (needsReconcile) {
               const reconciled = { ...loadedPrefs, favorites: reconciledIds };
-              setPreferences(reconciled);
               await AsyncStorage.setItem(
                 STORAGE_KEYS.PREFERENCES,
                 JSON.stringify(reconciled)
@@ -136,13 +173,31 @@ export function useRestaurantStorage() {
             console.error("Error parsing favorites data:", e);
           }
         }
+        if (favoritesStore.get() === null) {
+          favoritesStore.publish({});
+        }
+
+        // Another screen may have loaded or saved preferences while this read
+        // was in flight. Its copy is newer than what storage handed us.
+        const shared = preferencesStore.get();
+        if (shared) {
+          loadedPrefs = shared;
+          preferencesRef.current = shared;
+          setPreferences(shared);
+        } else {
+          preferencesStore.publish(loadedPrefs);
+        }
 
         // Seed shared context with saved zip on first mount only (don't overwrite an active search)
         if (!initialSyncDone.current && !currentSearchParams.zipCode) {
           const savedZip = loadedPrefs.defaultZipCode || loadedPrefs.defaultPostalCode || "";
           const savedRadius = loadedPrefs.defaultRadius || 10;
           if (savedZip) {
-            setCurrentSearchParams({ zipCode: savedZip, radius: savedRadius });
+            setCurrentSearchParams({
+              zipCode: savedZip,
+              radius: savedRadius,
+              countryCode: loadedPrefs.defaultCountryCode ?? null,
+            });
           }
           initialSyncDone.current = true;
         }
@@ -160,6 +215,7 @@ export function useRestaurantStorage() {
   const searchQuery = trpc.restaurant.search.useQuery(
     {
       postalCode: currentSearchParams.zipCode,
+      countryCode: currentSearchParams.countryCode,
       radius: currentSearchParams.radius,
       limit: 50,
     },
@@ -247,29 +303,24 @@ export function useRestaurantStorage() {
   // "More Like This" cards can produce identically-normalized Restaurant
   // objects (most importantly, absolute photo URLs).
 
-  // Save preferences to storage. Functional setState so rapid saves
-  // (e.g. toggling two settings in quick succession) don't clobber via
-  // a stale `preferences` closure.
+  // Save preferences to storage. Builds on the shared snapshot (updated
+  // synchronously) so rapid saves from any screen compose instead of one
+  // screen's stale copy overwriting another's change.
   const savePreferences = useCallback(async (newPrefs: Partial<UserPreferences>) => {
     try {
-      let persisted: UserPreferences | null = null;
-      setPreferences((prev) => {
-        const next = { ...prev, ...newPrefs };
-        // Keep postal/zip aliases in sync
-        if (newPrefs.defaultPostalCode !== undefined) {
-          next.defaultZipCode = newPrefs.defaultPostalCode;
-        }
-        if (newPrefs.defaultZipCode !== undefined) {
-          next.defaultPostalCode = newPrefs.defaultZipCode;
-        }
-        persisted = next;
-        return next;
-      });
-      if (persisted) {
-        await retryOperation(() =>
-          AsyncStorage.setItem(STORAGE_KEYS.PREFERENCES, JSON.stringify(persisted))
-        );
+      const prev = preferencesStore.get() ?? preferencesRef.current;
+      const next = { ...prev, ...newPrefs };
+      // Keep postal/zip aliases in sync
+      if (newPrefs.defaultPostalCode !== undefined) {
+        next.defaultZipCode = newPrefs.defaultPostalCode;
       }
+      if (newPrefs.defaultZipCode !== undefined) {
+        next.defaultPostalCode = newPrefs.defaultZipCode;
+      }
+      preferencesStore.publish(next);
+      await retryOperation(() =>
+        AsyncStorage.setItem(STORAGE_KEYS.PREFERENCES, JSON.stringify(next))
+      );
 
       // Clear cache when location preferences change so new data is fetched
       if (
@@ -297,13 +348,15 @@ export function useRestaurantStorage() {
 
   // Search restaurants with new ZIP code/radius (triggers immediate API call).
   // Also persists location to preferences so Home, Browse, and Settings stay in sync.
+  // countryCode: pass the GPS country with a GPS-derived zip; omit it for a
+  // typed zip (a new zip then drops the old country, the same zip keeps it).
   const searchWithNewParams = useCallback(async (
     zipCode: string,
     radius: number,
-    options?: { persist?: boolean }
+    options?: { persist?: boolean; countryCode?: string | null }
   ) => {
     setRestaurantsError(null);
-    setCurrentSearchParams({ zipCode, radius });
+    setCurrentSearchParams({ zipCode, radius, countryCode: options?.countryCode });
 
     if (options?.persist === false) return;
 
@@ -311,15 +364,22 @@ export function useRestaurantStorage() {
     if (!zip) return;
 
     const prev = preferencesRef.current;
+    const countryCode =
+      options?.countryCode === null
+        ? undefined
+        : options?.countryCode ??
+          (prev.defaultZipCode === zip ? prev.defaultCountryCode : undefined);
     const locationChanged =
       prev.defaultZipCode !== zip ||
       prev.defaultPostalCode !== zip ||
-      prev.defaultRadius !== radius;
+      prev.defaultRadius !== radius ||
+      prev.defaultCountryCode !== countryCode;
     if (locationChanged) {
       await savePreferences({
         defaultZipCode: zip,
         defaultPostalCode: zip,
         defaultRadius: radius,
+        defaultCountryCode: countryCode,
       });
     }
   }, [setCurrentSearchParams, savePreferences]);
@@ -346,65 +406,46 @@ export function useRestaurantStorage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Mirror of the latest favorites snapshot for the AppState backgrounding
-  // flush below. Updated synchronously alongside setFavoritesData so the
-  // backgrounding handler always sees the most recent intent even if the
-  // deferred InteractionManager write hasn't fired yet.
-  const latestFavoritesRef = useRef<Record<string, Restaurant>>(favoritesData);
-  useEffect(() => {
-    latestFavoritesRef.current = favoritesData;
-  }, [favoritesData]);
-
-  // Track whether there's a pending deferred favorites write so the
-  // AppState handler knows to flush on background.
-  const favoritesPendingWriteRef = useRef(false);
-
   // Toggle favorite status.
   // Accepts either a full Restaurant (preferred — persists a snapshot so the
   // Favorites tab survives search changes / cache expiry) or a bare id (legacy;
   // falls back to looking up the current in-memory restaurants list).
   //
-  // Uses a functional state update so two rapid-fire taps on the same or
-  // different restaurants can't clobber each other via stale closures.
+  // Builds on the shared favorites snapshot (updated synchronously) so two
+  // rapid-fire taps, even from different screens, can't clobber each other.
   const toggleFavorite = useCallback(async (restaurantOrId: Restaurant | string) => {
     const restaurantId =
       typeof restaurantOrId === "string" ? restaurantOrId : restaurantOrId.id;
     const providedRestaurant: Restaurant | undefined =
       typeof restaurantOrId === "string" ? undefined : restaurantOrId;
 
-    // Compute the next state inside the functional update so we always
-    // see the latest committed value. We still need to resolve the full
-    // Restaurant object, which requires either `providedRestaurant` or a
-    // lookup via the current `restaurants` list / existing snapshot.
+    const prev = favoritesStore.get();
+    if (prev === null) {
+      // Favorites haven't loaded yet; writing now would replace the saved list.
+      console.warn("[useRestaurantStorage] Favorites not loaded yet; ignoring toggle");
+      return;
+    }
+
     let nextDataForWrite: Record<string, Restaurant> | null = null;
-
-    setFavoritesData((prev) => {
-      const isCurrentlyFavorite = !!prev[restaurantId];
+    if (prev[restaurantId]) {
       const next = { ...prev };
-
-      if (isCurrentlyFavorite) {
-        delete next[restaurantId];
-      } else {
-        const resolved =
-          providedRestaurant ??
-          prev[restaurantId] ??
-          restaurants.find((r) => r.id === restaurantId);
-        if (!resolved) {
-          console.warn(
-            `[useRestaurantStorage] Cannot favorite ${restaurantId}: no restaurant data available`
-          );
-          return prev;
-        }
-        next[restaurantId] = resolved;
-      }
-
+      delete next[restaurantId];
       nextDataForWrite = next;
-      return next;
-    });
+    } else {
+      const resolved =
+        providedRestaurant ?? restaurants.find((r) => r.id === restaurantId);
+      if (resolved) {
+        nextDataForWrite = { ...prev, [restaurantId]: resolved };
+      } else {
+        console.warn(
+          `[useRestaurantStorage] Cannot favorite ${restaurantId}: no restaurant data available`
+        );
+      }
+    }
 
-    // Persist the snapshot (and sync preferences.favorites) AFTER the state
-    // update has captured the correct next value. If we decided not to change
-    // anything (e.g. missing restaurant data), nextDataForWrite stays null.
+    // Publish to every screen, then persist the snapshot (and sync
+    // preferences.favorites). If we decided not to change anything (e.g.
+    // missing restaurant data), nextDataForWrite stays null.
     //
     // Deferred with InteractionManager so the favorite-star animation paints
     // before we JSON.stringify the entire favorites map — on phones with a
@@ -412,8 +453,8 @@ export function useRestaurantStorage() {
     // directly causes tap latency if it happens inline.
     if (nextDataForWrite) {
       const snapshot = nextDataForWrite;
-      latestFavoritesRef.current = snapshot;
-      favoritesPendingWriteRef.current = true;
+      favoritesStore.publish(snapshot);
+      favoritesPendingWrite = true;
       InteractionManager.runAfterInteractions(() => {
         AsyncStorage.setItem(
           STORAGE_KEYS.FAVORITES_DATA,
@@ -424,8 +465,8 @@ export function useRestaurantStorage() {
             // is still the latest. If a newer toggle happened between the
             // schedule and now, leave the flag set so the next flush still
             // runs.
-            if (latestFavoritesRef.current === snapshot) {
-              favoritesPendingWriteRef.current = false;
+            if (favoritesStore.get() === snapshot) {
+              favoritesPendingWrite = false;
             }
           })
           .catch((e) => console.error("Error persisting favorites:", e));
@@ -442,14 +483,16 @@ export function useRestaurantStorage() {
   // exactly the data-loss case Mercury-2 flagged.
   useEffect(() => {
     const flushFavorites = () => {
-      if (!favoritesPendingWriteRef.current) return;
-      const snapshot = latestFavoritesRef.current;
+      const snapshot = favoritesStore.get();
+      if (!favoritesPendingWrite || snapshot === null) return;
       AsyncStorage.setItem(
         STORAGE_KEYS.FAVORITES_DATA,
         JSON.stringify(snapshot)
       )
         .then(() => {
-          favoritesPendingWriteRef.current = false;
+          if (favoritesStore.get() === snapshot) {
+            favoritesPendingWrite = false;
+          }
         })
         .catch((e) => console.error("Error flushing favorites on bg:", e));
     };
@@ -576,21 +619,21 @@ export function useRestaurantStorage() {
   // When the modal dismisses it also calls this one last time with the
   // committed text, which flushes immediately via the same debouncer.
   const notesPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latestNotesRef = useRef<Record<string, string>>(personalNotes);
-  useEffect(() => {
-    latestNotesRef.current = personalNotes;
-  }, [personalNotes]);
-
   const flushNotes = useCallback(async () => {
     if (notesPersistTimerRef.current) {
       clearTimeout(notesPersistTimerRef.current);
       notesPersistTimerRef.current = null;
     }
+    const snapshot = personalNotesStore.get();
+    if (!notesPendingWrite || snapshot === null) return;
     try {
       await AsyncStorage.setItem(
         STORAGE_KEYS.PERSONAL_NOTES,
-        JSON.stringify(latestNotesRef.current)
+        JSON.stringify(snapshot)
       );
+      if (personalNotesStore.get() === snapshot) {
+        notesPendingWrite = false;
+      }
     } catch (error) {
       console.error("Error saving notes:", error);
     }
@@ -598,18 +641,22 @@ export function useRestaurantStorage() {
 
   const updateRestaurantNotes = useCallback(
     async (restaurantId: string, notes: string) => {
-      setPersonalNotes((prev) => {
-        const next = { ...prev };
-        // Preserve whitespace as typed so trailing spaces/newlines don't get
-        // eaten on every keystroke. Only drop the entry when effectively empty.
-        if (notes.trim().length > 0) {
-          next[restaurantId] = notes;
-        } else {
-          delete next[restaurantId];
-        }
-        latestNotesRef.current = next;
-        return next;
-      });
+      const prev = personalNotesStore.get();
+      if (prev === null) {
+        // Notes haven't loaded yet; writing now would replace the saved notes.
+        console.warn("[useRestaurantStorage] Notes not loaded yet; ignoring edit");
+        return;
+      }
+      const next = { ...prev };
+      // Preserve whitespace as typed so trailing spaces/newlines don't get
+      // eaten on every keystroke. Only drop the entry when effectively empty.
+      if (notes.trim().length > 0) {
+        next[restaurantId] = notes;
+      } else {
+        delete next[restaurantId];
+      }
+      personalNotesStore.publish(next);
+      notesPendingWrite = true;
 
       if (notesPersistTimerRef.current) {
         clearTimeout(notesPersistTimerRef.current);
@@ -623,35 +670,22 @@ export function useRestaurantStorage() {
   );
 
   // Flush any pending notes write when the hook unmounts AND whenever
-  // the app leaves the foreground. The debounce window is 400ms, so a
+  // the app leaves the foreground (only if there is something unsaved, and
+  // always the shared latest, never this screen's own copy). The debounce window is 400ms, so a
   // force-kill during active typing would otherwise lose up to 400ms of
   // keystrokes — listening to AppState closes that window for the common
   // case of the user backgrounding mid-note.
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
       if (state !== "active") {
-        if (notesPersistTimerRef.current) {
-          clearTimeout(notesPersistTimerRef.current);
-          notesPersistTimerRef.current = null;
-        }
-        AsyncStorage.setItem(
-          STORAGE_KEYS.PERSONAL_NOTES,
-          JSON.stringify(latestNotesRef.current)
-        ).catch(() => {});
+        flushNotes();
       }
     });
     return () => {
       sub.remove();
-      if (notesPersistTimerRef.current) {
-        clearTimeout(notesPersistTimerRef.current);
-        notesPersistTimerRef.current = null;
-      }
-      AsyncStorage.setItem(
-        STORAGE_KEYS.PERSONAL_NOTES,
-        JSON.stringify(latestNotesRef.current)
-      ).catch(() => {});
+      flushNotes();
     };
-  }, []);
+  }, [flushNotes]);
 
   // Get personal notes for a restaurant
   const getRestaurantNotes = useCallback((restaurantId: string): string | undefined => {

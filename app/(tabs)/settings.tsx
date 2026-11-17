@@ -90,10 +90,13 @@ export default function SettingsScreen() {
   const [radius, setRadius] = useState(preferences.defaultRadius?.toString() || "5");
 
 
+  // Preferences are shared across screens now, so only reset the form when
+  // the saved location itself changes (not when e.g. a favorite is toggled
+  // on another tab while the user is mid-edit here).
   useEffect(() => {
     setZipCode(preferences.defaultZipCode || "");
     setRadius(preferences.defaultRadius?.toString() || "5");
-  }, [preferences]);
+  }, [preferences.defaultZipCode, preferences.defaultRadius]);
 
   const handleSave = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -113,10 +116,14 @@ export default function SettingsScreen() {
       return;
     }
 
+    // A typed zip has no known country; keep the GPS country only if the
+    // zip itself didn't change (the Worker falls back to the phone's country).
+    const zipChanged = zipCode.trim() !== (preferences.defaultZipCode || "");
     await savePreferences({
       defaultZipCode: zipCode.trim(),
       defaultPostalCode: zipCode.trim(),
       defaultRadius: radiusNum,
+      defaultCountryCode: zipChanged ? undefined : preferences.defaultCountryCode,
     });
 
     if (zipCode.trim()) {
@@ -386,7 +393,7 @@ export default function SettingsScreen() {
           <View style={styles.aboutDescription}>
             <ThemedText style={[styles.descriptionText, { color: colors.textSecondary }]}>
               Discover local restaurants with our fun random picker. View daily specials, 
-              Culver's Flavor of the Day, and aggregated ratings from multiple sources.
+              Culver&apos;s Flavor of the Day, and aggregated ratings from multiple sources.
             </ThemedText>
           </View>
 
@@ -401,7 +408,7 @@ export default function SettingsScreen() {
             </View>
             <View style={styles.featureItem}>
               <IconSymbol name="flame.fill" size={20} color={colors.accent} />
-              <ThemedText style={styles.featureText}>Culver's Flavor of the Day</ThemedText>
+              <ThemedText style={styles.featureText}>Culver&apos;s Flavor of the Day</ThemedText>
             </View>
             <View style={styles.featureItem}>
               <IconSymbol name="star.fill" size={20} color={colors.accent} />

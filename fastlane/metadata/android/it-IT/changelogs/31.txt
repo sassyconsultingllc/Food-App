@@ -1,0 +1,6 @@
+Le pagine dei ristoranti mostrano tutte le foto, senza ripetere la stessa.
+Il menu è subito sotto le foto, con un pulsante "View Full Menu" se disponibile.
+Le note personali private sono nella pagina del ristorante.
+I consigli della community avvisano prima di pubblicare un numero di telefono o un'email.
+"Use My Location" ora funziona sempre, e la posizione scelta in una schermata vale per tutte.
+Preferiti e note personali restano sincronizzati in tutte le schede.

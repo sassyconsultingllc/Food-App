@@ -45,10 +45,9 @@ export function TasteMatchesSection({
   // Memoize the per-card style objects so the Pressable's render-style
   // function doesn't allocate a fresh `{backgroundColor, borderColor, ...}`
   // object on every render (which prevents StyleSheet caching and creates
-  // unnecessary re-render churn on horizontal scroll).
-  // These must run BEFORE the early return below: when matches arrive after
-  // an empty first render, a hook count change throws "Rendered more hooks
-  // than during the previous render" and takes down the screen.
+  // unnecessary re-render churn on horizontal scroll). These must stay above
+  // the early return below: hooks after it would change the hook count when
+  // the user's first favorite appears, and React would throw.
   const cardBaseStyle = useMemo(
     () => ({
       backgroundColor: colors.surface,

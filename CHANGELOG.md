@@ -13,7 +13,40 @@ The **Privacy Policy** linked from every release: <https://sassyconsultingllc.co
 The **Terms of Service** linked from every release: <https://sassyconsultingllc.com/privacy/foodie-finder/terms>
 
 
-## 1.0.5 (vc30) - 2026-09-24
+## Unreleased (after 1.0.5 vc31)
+
+- Searching a postal code finds the right country. Codes shared by
+  several countries used to land in the wrong one, sometimes thousands
+  of km away.
+- Restaurants say what they're good for ("Best place for quiet
+  atmosphere") and what to watch out for, from their reviews.
+- "Open now" uses the restaurant's own clock, counts places with split
+  lunch and dinner hours as open in the evening, and the restaurant page
+  shows an Open/Closed badge with today's hours in bold.
+- Photos that fail to load are skipped, and the photo and menu strips
+  fit the screen after rotating, in split-screen and on tablets.
+- A failed search or restaurant load says so and offers to try again,
+  and Home's Refresh button always reloads.
+- Community tips show newest first, with "Show all" for long lists.
+- Screen readers announce every button by name.
+
+## 1.0.5 (vc31) - 2026-10-26
+
+<!-- vc30 was built on 2026-09-24 from ff8ee7d (the photos/menu/notes items
+     below, without the location, favorites and notes-sync fixes) and was
+     superseded by vc31 before reaching Play. 30.txt keeps its notes. -->
+
+- "Use My Location" works every time. It used to do nothing once any
+  zip had been saved, which was after your first search.
+- A location set on any screen (Home, Browse, Settings) is now the one
+  every screen shows and searches. Before, Home could keep showing and
+  spinning on an old zip after you changed it in Settings, and saving
+  from another tab could put the old zip back.
+- If your location has no postal code, you're asked to type one instead
+  of nothing happening.
+- A favorite added on one tab shows up on the Favorites tab right away,
+  and a personal note written on a restaurant page can no longer be
+  overwritten by an older copy when the app goes to the background.
 
 - Restaurant pages now show every unique photo Google has, instead of
   repeating the same shot.

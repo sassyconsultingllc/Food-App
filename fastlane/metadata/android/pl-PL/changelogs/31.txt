@@ -1,0 +1,6 @@
+Strony restauracji pokazują wszystkie zdjęcia zamiast powtarzać to samo.
+Menu jest tuż pod zdjęciami, z przyciskiem „View Full Menu”, jeśli jest dostępne.
+Prywatne notatki są na stronie restauracji.
+Wskazówki społeczności ostrzegają przed opublikowaniem numeru telefonu lub adresu e-mail.
+„Use My Location” działa teraz zawsze, a lokalizacja wybrana na dowolnym ekranie obowiązuje wszędzie.
+Ulubione i notatki są zsynchronizowane na wszystkich kartach.

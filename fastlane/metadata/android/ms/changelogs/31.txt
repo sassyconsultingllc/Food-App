@@ -1,0 +1,6 @@
+Halaman restoran kini memaparkan semua foto, bukan foto yang sama berulang kali.
+Menu terletak di bawah foto, dengan butang "View Full Menu" jika ada.
+Nota peribadi kini di halaman restoran.
+Tip komuniti memberi amaran sebelum anda menyiarkan nombor telefon atau e-mel.
+"Use My Location" kini sentiasa berfungsi, dan lokasi yang dipilih di mana-mana skrin digunakan di semua skrin.
+Kegemaran dan nota peribadi kekal disegerakkan di semua tab.

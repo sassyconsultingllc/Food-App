@@ -1,0 +1,6 @@
+As páginas dos restaurantes mostram todas as fotografias, sem repetir a mesma.
+O menu fica logo abaixo das fotografias, com um botão "View Full Menu" quando existe.
+As notas pessoais privadas estão na página do restaurante.
+As dicas da comunidade avisam antes de publicar um telefone ou e-mail.
+"Use My Location" funciona agora sempre, e a localização escolhida em qualquer ecrã aplica-se a todos.
+Favoritos e notas pessoais mantêm-se sincronizados em todos os separadores.
