@@ -17,8 +17,11 @@ keys/
 .env
 .env.local
 
-# Scrape vendored third-party code that the mobile build doesn't use.
-vendor/
+# Vendored code the mobile build doesn't use. vendor/decode-uri-component
+# and vendor/image-size ARE used (file: dependencies in package.json, see
+# CLAUDE.md "Patched dependencies"), so they must stay in the upload.
+vendor/sassyconsultingllc-cloudflare/
+vendor/node-domexception/
 
 # Android build artifacts — these are REGENERATED fresh in the EAS
 # container. Uploading the local Windows cache CONFUSES EAS's Linux
