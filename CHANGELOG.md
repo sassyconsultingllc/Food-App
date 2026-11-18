@@ -13,10 +13,11 @@ The **Privacy Policy** linked from every release: <https://sassyconsultingllc.co
 The **Terms of Service** linked from every release: <https://sassyconsultingllc.com/privacy/foodie-finder/terms>
 
 
-## 1.0.6 (vc33) - 2026-11-18
+## 1.0.6 (vc34) - 2026-11-18
 
 <!-- vc32 was built on 2026-11-17 from b7c05f1 (the ~/work line, without
-     the Dependabot fixes in 9fdceb7) and was superseded by vc33. -->
+     the Dependabot fixes in 9fdceb7) and was superseded. vc33 (afaeed6d)
+     failed on EAS because .easignore dropped vendor/; fixed in d62ac47. -->
 
 - Searching a postal code finds the right country. Codes shared by
   several countries used to land in the wrong one, sometimes thousands
