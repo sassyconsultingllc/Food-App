@@ -1,0 +1,8 @@
+Tìm theo mã bưu chính tìm đúng quốc gia và bỏ qua nơi ở xa.
+Nhà hàng hiển thị điểm mạnh của mình dựa trên đánh giá.
+Tên viết bằng chữ không phải Latinh được giữ lại.
+Đã sửa hương vị trong ngày và giờ mở cửa của Culver's.
+"Đang mở cửa" dùng giờ địa phương của nhà hàng.
+Ảnh lỗi được bỏ qua và ảnh vừa với mọi màn hình.
+Có thể thử lại khi tải thất bại, và "Refresh" luôn tải lại.
+Mẹo mới nhất lên đầu. Hỗ trợ trình đọc màn hình tốt hơn.

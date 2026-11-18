@@ -1,0 +1,8 @@
+Nahahanap ng postal code search ang tamang bansa at nilalaktawan ang malalayong lugar.
+Ipinapakita ng restaurant kung saan ito mahusay, batay sa review.
+Napapanatili ang mga pangalang hindi Latin ang titik.
+Naayos ang flavor of the day at oras ng Culver's.
+Ginagamit ng "Open now" ang lokal na oras ng restaurant.
+Nilalaktawan ang sirang larawan.
+Puwedeng ulitin ang nabigong pag-load, at laging nagre-reload ang "Refresh".
+Pinakabagong tip muna. Mas mahusay na suporta sa screen reader.

@@ -1,0 +1,8 @@
+Pencarian kode pos menemukan negara yang tepat dan melewati tempat yang jauh.
+Restoran menampilkan keunggulannya berdasarkan ulasan.
+Nama dalam aksara non-Latin tetap dipertahankan.
+Rasa hari ini dan jam buka Culver's diperbaiki.
+"Buka sekarang" memakai waktu lokal restoran.
+Foto rusak dilewati, dan foto pas di layar apa pun.
+Pemuatan yang gagal bisa dicoba lagi, dan "Refresh" selalu memuat ulang.
+Tips terbaru di atas. Dukungan pembaca layar lebih baik.

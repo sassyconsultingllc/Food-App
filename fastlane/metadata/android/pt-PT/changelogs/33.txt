@@ -1,0 +1,8 @@
+A pesquisa por código postal encontra o país certo e ignora locais distantes.
+Os restaurantes mostram em que se destacam, com base nas avaliações.
+Nomes em alfabetos não latinos são mantidos.
+Sabor do dia e horários do Culver's corrigidos.
+"Aberto agora" usa a hora local de cada restaurante.
+Fotos com erro são ignoradas.
+Carregamentos falhados podem ser repetidos, e "Refresh" recarrega sempre.
+Dicas mais recentes primeiro. Melhor suporte a leitores de ecrã.

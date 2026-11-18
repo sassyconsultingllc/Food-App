@@ -1,0 +1,210 @@
+<ar>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</ar>
+<da-DK>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</da-DK>
+<de-DE>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</de-DE>
+<el-GR>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</el-GR>
+<en-US>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</en-US>
+<es-419>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</es-419>
+<es-ES>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</es-ES>
+<fi-FI>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</fi-FI>
+<fil>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</fil>
+<fr-CA>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</fr-CA>
+<fr-FR>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</fr-FR>
+<hi-IN>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</hi-IN>
+<id>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</id>
+<it-IT>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</it-IT>
+<ja-JP>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</ja-JP>
+<ko-KR>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</ko-KR>
+<ms>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</ms>
+<nl-NL>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</nl-NL>
+<no-NO>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</no-NO>
+<pl-PL>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</pl-PL>
+<pt-BR>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</pt-BR>
+<pt-PT>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</pt-PT>
+<ru-RU>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</ru-RU>
+<sv-SE>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</sv-SE>
+<th>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</th>
+<tr-TR>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</tr-TR>
+<uk>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</uk>
+<vi>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</vi>
+<zh-CN>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</zh-CN>
+<zh-TW>
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.
+</zh-TW>

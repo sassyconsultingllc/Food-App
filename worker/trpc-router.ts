@@ -16,15 +16,30 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import { z } from "zod";
 import superjson from "superjson";
 import type { Env } from "./context";
-import { scrapeRestaurants, fetchCulversFlavor, getCoords } from "./scraper";
+import { scrapeRestaurants, fetchCulversFlavor, getCoords, refreshCulversRecords } from "./scraper";
+
 import { initCacheTables, isPostalCodeCached, getCachedRestaurants, cacheRestaurants, getCacheStats } from "./cache";
 import { semanticSearch, findSimilar, indexRestaurants, getIndexStats, recommendFromFavorites } from "./vector-search";
 import { RestaurantEmbeddingInput } from "./embeddings";
 import { guardPublicNote, checkNoteRateLimit } from "./content-guard";
 import { computeBucketId } from "./restaurant-bucket";
-import { toAlpha2 } from "./country-codes";
 import { requestCountry } from "./request-country";
-import type { KVNamespace } from "@cloudflare/workers-types";
+import { toAlpha2 } from "./country-codes";
+import type { D1Database, KVNamespace } from "@cloudflare/workers-types";
+
+// Write refreshed Culver's records back so the next cache hit doesn't
+// re-fetch. Best effort: a failed write only costs one more locator call.
+async function saveRefreshedCulvers(db: D1Database, restaurants: any[]): Promise<void> {
+  const culvers = restaurants.filter((r) => r?.isCulvers && typeof r.id === "string");
+  if (culvers.length === 0) return;
+  try {
+    await db.batch(
+      culvers.map((r) => db.prepare("UPDATE restaurant_cache SET data = ? WHERE id = ?").bind(JSON.stringify(r), r.id))
+    );
+  } catch (e) {
+    console.warn("[Router] Saving refreshed Culver's records failed:", e);
+  }
+}
 
 interface Context {
   env: Env;
@@ -289,6 +304,7 @@ export const appRouter = router({
             // as a follow-up; see cache.ts cacheRestaurants notes.)
             if (cached.length > 0) {
               console.log(`[Router] Serving ${cacheKey} from cache`);
+              if (await refreshCulversRecords(cached)) await saveRefreshedCulvers(db, cached);
               if (cuisineType) {
                 cached = cached.filter((r: any) =>
                   r.cuisineType?.toLowerCase().includes(cuisineType.toLowerCase()) ||
@@ -399,11 +415,14 @@ export const appRouter = router({
             .bind(input.id)
             .first<{ data: string }>();
           if (!row) return { restaurant: null };
+          let restaurant: Record<string, any>;
           try {
-            return { restaurant: JSON.parse(row.data) };
+            restaurant = JSON.parse(row.data);
           } catch {
             return { restaurant: null };
           }
+          if (await refreshCulversRecords([restaurant])) await saveRefreshedCulvers(db, [restaurant]);
+          return { restaurant };
         } catch (e) {
           console.error("[Router] getById error:", e);
           return { restaurant: null };

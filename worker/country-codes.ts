@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Shane Smith / Sassy Consulting LLC. All rights reserved.
 // Proprietary source. This notice is Copyright Management Information (17 U.S.C. 1202); removal or alteration prohibited.
+// CodeMark: SCLLC1-foodie_finder_v8-CC1048KXZL
+
 /**
  * ISO 3166-1 country-code normalization.
  *
@@ -46,9 +48,14 @@ const ALPHA3_TO_ALPHA2: Record<string, string> = {
   ZWE:'ZW',
 };
 
-/** Normalize an ISO 3166-1 alpha-2 or alpha-3 code to upper-case alpha-2. */
+/** Normalize an ISO 3166-1 alpha-2 or alpha-3 code to upper-case alpha-2, or empty string. */
 export function toAlpha2(code: string | null | undefined): string {
   const c = (code || '').trim().toUpperCase();
   if (c.length === 3) return ALPHA3_TO_ALPHA2[c] || '';
   return c.length === 2 ? c : '';
+}
+
+/** Return the alpha-2 code for an alpha-2 or alpha-3 input, or undefined. */
+export function alpha2(code?: string | null): string | undefined {
+  return toAlpha2(code) || undefined;
 }

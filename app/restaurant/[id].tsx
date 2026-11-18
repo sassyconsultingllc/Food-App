@@ -43,6 +43,7 @@ import { getLocalDayKey, getOpenStatus } from "@/utils/hours-utils";
 import type { HoursOfOperation } from "@/types/restaurant";
 import { trpc } from "@/lib/trpc";
 import { transformServerRestaurant } from "@/utils/restaurant-transform";
+import { normalizeHours } from "@/utils/culvers-hours";
 
 /**
  * Validate a URL before handing it to Linking.openURL. Restaurant data flows
@@ -121,7 +122,10 @@ export default function RestaurantDetailScreen() {
   // back to the server by id. Without this fallback these all rendered
   // "Restaurant not found" even though the backend has the record.
   const localRestaurant = getRestaurantById(id);
-  const serverEnabled = !!id && !localRestaurant && !dataLoading;
+  // Culver's also asks the server when held locally: the local copy (a
+  // favorite, or a search from yesterday) carries the flavor of the day it was
+  // saved on, and getById refreshes the flavor and hours.
+  const serverEnabled = !!id && !dataLoading && (!localRestaurant || !!localRestaurant.isCulvers);
   const serverQuery = trpc.restaurant.getById.useQuery(
     { id: id || "" },
     {
@@ -137,7 +141,21 @@ export default function RestaurantDetailScreen() {
         : undefined,
     [serverQuery.data]
   );
-  const restaurant = localRestaurant || serverRestaurant;
+  const restaurant = useMemo(() => {
+    const base = localRestaurant || serverRestaurant;
+    if (!base) return undefined;
+    if (localRestaurant?.isCulvers && serverRestaurant) {
+      return {
+        ...localRestaurant,
+        flavorOfTheDay: serverRestaurant.flavorOfTheDay,
+        flavorDescription: serverRestaurant.flavorDescription,
+        hours: serverRestaurant.hours ?? normalizeHours(localRestaurant.hours),
+        utcOffsetMinutes: serverRestaurant.utcOffsetMinutes ?? localRestaurant.utcOffsetMinutes,
+      };
+    }
+    // Snapshots saved by older builds can hold Culver's raw hours string.
+    return { ...base, hours: normalizeHours(base.hours) };
+  }, [localRestaurant, serverRestaurant]);
 
   // True while the server fallback is enabled but hasn't produced data or a
   // terminal error yet — used to hold the "not found" screen back until the

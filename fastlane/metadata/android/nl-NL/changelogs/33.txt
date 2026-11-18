@@ -1,0 +1,8 @@
+Zoeken op postcode vindt het juiste land en slaat verre plekken over.
+Restaurants tonen waar ze volgens reviews het best in zijn.
+Namen in niet-Latijns schrift blijven behouden.
+Smaak van de dag en openingstijden van Culver's gecorrigeerd.
+"Nu open" gebruikt de lokale tijd van het restaurant.
+Kapotte foto's worden overgeslagen en foto's passen op elk scherm.
+Mislukt laden kan opnieuw, en "Refresh" laadt altijd opnieuw.
+Nieuwste tips eerst. Betere ondersteuning voor schermlezers.

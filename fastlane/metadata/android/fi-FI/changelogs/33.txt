@@ -1,0 +1,8 @@
+Postinumerohaku löytää oikean maan ja ohittaa kaukaiset paikat.
+Ravintolat kertovat arvostelujen perusteella, missä ne ovat parhaita.
+Muilla kuin latinalaisilla kirjaimilla kirjoitetut nimet säilyvät.
+Culver'sin päivän maku ja aukioloajat korjattu.
+"Auki nyt" käyttää ravintolan paikallista aikaa.
+Rikkinäiset kuvat ohitetaan, ja kuvat sopivat kaikille näytöille.
+Epäonnistuneen latauksen voi yrittää uudelleen, ja "Refresh" lataa aina uudelleen.
+Uusimmat vinkit ensin. Parempi ruudunlukijatuki.

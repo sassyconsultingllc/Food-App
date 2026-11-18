@@ -1,0 +1,8 @@
+Wyszukiwanie po kodzie pocztowym znajduje właściwy kraj i pomija odległe miejsca.
+Restauracje pokazują, w czym są najlepsze, na podstawie opinii.
+Nazwy w alfabetach innych niż łaciński są zachowywane.
+Poprawiono smak dnia i godziny otwarcia Culver's.
+„Otwarte teraz” korzysta z czasu lokalnego restauracji.
+Uszkodzone zdjęcia są pomijane.
+Nieudane wczytanie można ponowić, a „Refresh” zawsze odświeża.
+Najnowsze wskazówki na górze. Lepsza obsługa czytników ekranu.

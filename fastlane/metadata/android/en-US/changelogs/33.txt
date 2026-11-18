@@ -1,0 +1,8 @@
+Postal code searches find the right country and skip far-away places.
+Restaurants show what they're best for, from their reviews.
+Non-Latin restaurant names are kept.
+Culver's flavor of the day and hours are fixed.
+"Open now" uses each restaurant's local time.
+Broken photos are skipped, and photos fit any screen.
+Failed loads can be retried, and "Refresh" always reloads.
+Newest tips first. Better screen reader support.

@@ -1,0 +1,8 @@
+La ricerca per CAP trova il paese giusto e salta i luoghi lontani.
+I ristoranti mostrano in cosa eccellono, in base alle recensioni.
+I nomi in alfabeti non latini vengono mantenuti.
+Corretti il gusto del giorno e gli orari di Culver's.
+"Aperto ora" usa l'ora locale di ogni ristorante.
+Le foto non funzionanti vengono saltate e si adattano a ogni schermo.
+I caricamenti falliti si possono riprovare e "Refresh" ricarica sempre.
+Consigli più recenti per primi. Miglior supporto agli screen reader.

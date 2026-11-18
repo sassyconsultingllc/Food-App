@@ -16,6 +16,7 @@
  */
 
 import { getApiBaseUrl } from "@/constants/oauth";
+import { normalizeHours } from "@/utils/culvers-hours";
 import { Restaurant, DietaryOption } from "@/types/restaurant";
 
 // Map raw Google Places types to readable labels
@@ -199,8 +200,11 @@ export function transformServerRestaurant(serverRestaurant: any): Restaurant {
       hereReviewCount: serverRestaurant.ratings?.hereReviewCount,
     },
     priceRange: serverRestaurant.priceRange,
-    hours: serverRestaurant.hours,
-    utcOffsetMinutes: serverRestaurant.utcOffsetMinutes,
+    // Culver's records cached before the Worker normalized them carry the
+    // locator's raw JSON string, which every open check read as "open".
+    hours: normalizeHours(serverRestaurant.hours),
+    utcOffsetMinutes:
+      typeof serverRestaurant.utcOffsetMinutes === "number" ? serverRestaurant.utcOffsetMinutes : undefined,
     categories,
     dietaryOptions,
     description: serverRestaurant.reviewSummary,

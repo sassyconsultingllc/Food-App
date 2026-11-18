@@ -14,14 +14,19 @@ export default defineConfig([
     ignores: ["dist/*"],
   },
   {
-    // Pin the React version so eslint-plugin-react skips its "detect" path,
-    // which calls context.getFilename(). That keeps lint working in a
-    // node_modules that still has ESLint 10, not only on the pinned 9.x.
-    settings: { react: { version: "19.1" } },
-  },
-  {
     // Build/config scripts run in Node, not the app runtime.
     files: ["**/*.cjs", "**/*.mjs", "scripts/**"],
     languageOptions: { globals: globals.node },
+  },
+  {
+    // eslint-plugin-react's "detect" calls context.getFilename(), which
+    // ESLint 10 removed, so every react/* rule crashes the run. Pinning the
+    // version skips the detection path entirely.
+    settings: { react: { version: "19.1" } },
+    rules: {
+      // Guards against HTML parser quirks; React Native <Text> renders raw
+      // apostrophes/quotes verbatim, so it only adds escaping noise here.
+      "react/no-unescaped-entities": "off",
+    },
   },
 ]);

@@ -1,0 +1,8 @@
+Die PLZ-Suche findet das richtige Land und lässt weit entfernte Orte weg.
+Restaurants zeigen, wofür sie laut Bewertungen am besten sind.
+Namen in nicht-lateinischer Schrift bleiben erhalten.
+Culver's: Tagessorte und Öffnungszeiten korrigiert.
+„Jetzt geöffnet“ nutzt die Ortszeit des Restaurants.
+Defekte Fotos werden übersprungen, Fotos passen auf jeden Bildschirm.
+Bei Ladefehlern erneut versuchen; „Refresh“ lädt immer neu.
+Neueste Tipps zuerst. Bessere Screenreader-Unterstützung.

@@ -13,13 +13,19 @@ The **Privacy Policy** linked from every release: <https://sassyconsultingllc.co
 The **Terms of Service** linked from every release: <https://sassyconsultingllc.com/privacy/foodie-finder/terms>
 
 
-## Unreleased (after 1.0.5 vc31)
+## 1.0.6 (vc33) - 2026-11-18
+
+<!-- vc32 was built on 2026-11-17 from b7c05f1 (the ~/work line, without
+     the Dependabot fixes in 9fdceb7) and was superseded by vc33. -->
 
 - Searching a postal code finds the right country. Codes shared by
   several countries used to land in the wrong one, sometimes thousands
-  of km away.
+  of km away, and results far outside your radius are dropped.
 - Restaurants say what they're good for ("Best place for quiet
   atmosphere") and what to watch out for, from their reviews.
+- Restaurant names in non-Latin scripts (Japanese, Arabic, Hindi and
+  others) are kept instead of being dropped.
+- Culver's shows the right Flavor of the Day and its real hours.
 - "Open now" uses the restaurant's own clock, counts places with split
   lunch and dinner hours as open in the evening, and the restaurant page
   shows an Open/Closed badge with today's hours in bold.

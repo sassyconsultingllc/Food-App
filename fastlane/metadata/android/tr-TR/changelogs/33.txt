@@ -1,0 +1,8 @@
+Posta kodu araması doğru ülkeyi bulur ve uzak yerleri atlar.
+Restoranlar, yorumlara göre en iyi oldukları yönü gösterir.
+Latin olmayan alfabelerdeki adlar korunur.
+Culver's günün lezzeti ve çalışma saatleri düzeltildi.
+"Şimdi açık" her restoranın yerel saatini kullanır.
+Bozuk fotoğraflar atlanır ve fotoğraflar her ekrana sığar.
+Başarısız yüklemeler yeniden denenebilir, "Refresh" her zaman yeniler.
+En yeni ipuçları önce. Daha iyi ekran okuyucu desteği.

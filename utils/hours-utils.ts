@@ -9,6 +9,7 @@
  */
 
 import { HoursOfOperation } from "@/types/restaurant";
+import { normalizeHours } from "@/utils/culvers-hours";
 
 const DAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
@@ -45,6 +46,8 @@ export function isRestaurantOpenNow(
   hours?: HoursOfOperation,
   utcOffsetMinutes?: number
 ): boolean {
+  // Favorites saved by older builds can hold Culver's raw hours string.
+  hours = normalizeHours(hours) as HoursOfOperation | undefined;
   if (!hours) return true; // Assume open if no hours data
 
   const now = localNowAt(utcOffsetMinutes);
@@ -208,6 +211,7 @@ export function getOpenStatus(
   nextChange?: string;
   todayHours?: string;
 } {
+  hours = normalizeHours(hours) as HoursOfOperation | undefined;
   if (!hours) {
     return { isOpen: false, statusText: "Hours unknown" };
   }
@@ -218,8 +222,21 @@ export function getOpenStatus(
   const dayName = DAY_NAMES[now.day] as keyof HoursOfOperation;
   const todayHoursStr = hours[dayName];
 
-  const isOpen = isRestaurantOpenNow(hours, utcOffsetMinutes);
+  // isRestaurantOpenNow assumes "open" when it can't tell, which suits the
+  // open-now filter but made the badge say "Open" for hours it couldn't
+  // read. The badge only says Open or Closed when it knows.
+  if (todayHoursStr && !/closed/i.test(todayHoursStr)) {
+    if (/24\s*h|24\/7|open 24/i.test(todayHoursStr)) {
+      return { isOpen: true, statusText: "Open 24 hours", todayHours: todayHoursStr };
+    }
+    if (!/\d{1,2}:?(\d{2})?\s*(am|pm)?\s*[-–to]+\s*\d{1,2}/i.test(todayHoursStr)) {
+      return { isOpen: false, statusText: "Hours unknown", todayHours: todayHoursStr };
+    }
+  }
 
+  // No entry for today while other days have one means closed today, which
+  // the closed branch below handles.
+  const isOpen = !!todayHoursStr && isRestaurantOpenNow(hours, utcOffsetMinutes);
   if (isOpen) {
     // Name the closing time of the range we are actually inside — on a
     // split-shift day the first range's close is the wrong answer at dinner.

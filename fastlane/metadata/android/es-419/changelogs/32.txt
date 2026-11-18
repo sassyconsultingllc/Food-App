@@ -1,0 +1,5 @@
+Restaurant pages stay reliable and responsive even when photos, hours, or external calls time out.
+Place review summaries highlight what a restaurant is known for at a glance.
+Fixed Culver's flavor of the day and hours parsing, local timezone open-now offsets, and search pricing.
+Retains non-Latin restaurant names and correctly maps international country codes.
+Fixed taste-matches stability.

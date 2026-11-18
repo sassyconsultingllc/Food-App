@@ -1,0 +1,8 @@
+Sökning på postnummer hittar rätt land och hoppar över platser långt bort.
+Restauranger visar vad de är bäst på, utifrån recensioner.
+Namn med icke-latinska tecken behålls.
+Culver's dagens smak och öppettider är rättade.
+"Öppet nu" använder restaurangens lokala tid.
+Trasiga foton hoppas över och foton passar alla skärmar.
+Misslyckad laddning kan göras om, och "Refresh" laddar alltid om.
+Nyaste tipsen först. Bättre stöd för skärmläsare.

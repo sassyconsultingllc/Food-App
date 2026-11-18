@@ -1,0 +1,300 @@
+<ar>
+البحث بالرمز البريدي يجد الدولة الصحيحة ويتجاهل الأماكن البعيدة.
+تعرض المطاعم أبرز ما تتميز به بناءً على مراجعاتها.
+تُحفظ أسماء المطاعم المكتوبة بغير الحروف اللاتينية.
+إصلاح نكهة اليوم وساعات العمل في Culver's.
+"مفتوح الآن" يعتمد على التوقيت المحلي لكل مطعم.
+تُتخطى الصور المعطلة، وتتلاءم الصور مع أي شاشة.
+يمكن إعادة محاولة التحميل الفاشل، وزر "Refresh" يعيد التحميل دائمًا.
+أحدث النصائح أولاً. دعم أفضل لقارئ الشاشة.
+</ar>
+<da-DK>
+Søgning på postnummer finder det rigtige land og springer fjerne steder over.
+Restauranter viser, hvad de er bedst til, ud fra anmeldelser.
+Restaurantnavne med ikke-latinske tegn bevares.
+Culver's dagens smag og åbningstider er rettet.
+"Åben nu" bruger restaurantens lokale tid.
+Defekte fotos springes over, og fotos passer til alle skærme.
+Mislykket indlæsning kan prøves igen, og "Refresh" genindlæser altid.
+Nyeste tips først. Bedre skærmlæserstøtte.
+</da-DK>
+<de-DE>
+Die PLZ-Suche findet das richtige Land und lässt weit entfernte Orte weg.
+Restaurants zeigen, wofür sie laut Bewertungen am besten sind.
+Namen in nicht-lateinischer Schrift bleiben erhalten.
+Culver's: Tagessorte und Öffnungszeiten korrigiert.
+„Jetzt geöffnet“ nutzt die Ortszeit des Restaurants.
+Defekte Fotos werden übersprungen, Fotos passen auf jeden Bildschirm.
+Bei Ladefehlern erneut versuchen; „Refresh“ lädt immer neu.
+Neueste Tipps zuerst. Bessere Screenreader-Unterstützung.
+</de-DE>
+<el-GR>
+Η αναζήτηση με ταχ. κώδικα βρίσκει τη σωστή χώρα και παραλείπει μακρινά μέρη.
+Τα εστιατόρια δείχνουν σε τι ξεχωρίζουν, βάσει κριτικών.
+Τα ονόματα σε μη λατινικούς χαρακτήρες διατηρούνται.
+Διορθώθηκαν η γεύση της ημέρας και το ωράριο των Culver's.
+Το «Ανοιχτό τώρα» χρησιμοποιεί την τοπική ώρα κάθε εστιατορίου.
+Οι χαλασμένες φωτογραφίες παραλείπονται.
+Η αποτυχημένη φόρτωση επαναλαμβάνεται και το «Refresh» ανανεώνει πάντα.
+Πρώτα οι νεότερες συμβουλές. Καλύτερη υποστήριξη αναγνώστη οθόνης.
+</el-GR>
+<en-US>
+Postal code searches find the right country and skip far-away places.
+Restaurants show what they're best for, from their reviews.
+Non-Latin restaurant names are kept.
+Culver's flavor of the day and hours are fixed.
+"Open now" uses each restaurant's local time.
+Broken photos are skipped, and photos fit any screen.
+Failed loads can be retried, and "Refresh" always reloads.
+Newest tips first. Better screen reader support.
+</en-US>
+<es-419>
+La búsqueda por código postal encuentra el país correcto y omite lugares lejanos.
+Los restaurantes muestran en qué destacan, según sus reseñas.
+Se conservan los nombres en alfabetos no latinos.
+Se corrigieron el sabor del día y el horario de Culver's.
+"Abierto ahora" usa la hora local de cada restaurante.
+Se omiten las fotos que no cargan.
+Puedes reintentar si algo no carga, y "Refresh" siempre recarga.
+Consejos más nuevos primero. Mejor soporte para lectores de pantalla.
+</es-419>
+<es-ES>
+La búsqueda por código postal encuentra el país correcto y omite sitios lejanos.
+Los restaurantes muestran en qué destacan, según sus reseñas.
+Se conservan los nombres en alfabetos no latinos.
+Corregidos el sabor del día y el horario de Culver's.
+"Abierto ahora" usa la hora local de cada restaurante.
+Se omiten las fotos que no cargan.
+Puedes reintentar si algo no carga, y "Refresh" siempre recarga.
+Consejos más recientes primero. Mejor soporte para lectores de pantalla.
+</es-ES>
+<fi-FI>
+Postinumerohaku löytää oikean maan ja ohittaa kaukaiset paikat.
+Ravintolat kertovat arvostelujen perusteella, missä ne ovat parhaita.
+Muilla kuin latinalaisilla kirjaimilla kirjoitetut nimet säilyvät.
+Culver'sin päivän maku ja aukioloajat korjattu.
+"Auki nyt" käyttää ravintolan paikallista aikaa.
+Rikkinäiset kuvat ohitetaan, ja kuvat sopivat kaikille näytöille.
+Epäonnistuneen latauksen voi yrittää uudelleen, ja "Refresh" lataa aina uudelleen.
+Uusimmat vinkit ensin. Parempi ruudunlukijatuki.
+</fi-FI>
+<fil>
+Nahahanap ng postal code search ang tamang bansa at nilalaktawan ang malalayong lugar.
+Ipinapakita ng restaurant kung saan ito mahusay, batay sa review.
+Napapanatili ang mga pangalang hindi Latin ang titik.
+Naayos ang flavor of the day at oras ng Culver's.
+Ginagamit ng "Open now" ang lokal na oras ng restaurant.
+Nilalaktawan ang sirang larawan.
+Puwedeng ulitin ang nabigong pag-load, at laging nagre-reload ang "Refresh".
+Pinakabagong tip muna. Mas mahusay na suporta sa screen reader.
+</fil>
+<fr-CA>
+La recherche par code postal trouve le bon pays et ignore les lieux éloignés.
+Les restaurants montrent leurs points forts, d'après leurs avis.
+Les noms en alphabet non latin sont conservés.
+Saveur du jour et heures de Culver's corrigées.
+« Ouvert maintenant » utilise l'heure locale du restaurant.
+Les photos défectueuses sont ignorées.
+Un chargement échoué peut être relancé, et « Refresh » recharge toujours.
+Conseils récents en premier. Meilleur soutien des lecteurs d'écran.
+</fr-CA>
+<fr-FR>
+La recherche par code postal trouve le bon pays et ignore les lieux éloignés.
+Les restaurants montrent leurs points forts, d'après leurs avis.
+Les noms en alphabet non latin sont conservés.
+Parfum du jour et horaires de Culver's corrigés.
+« Ouvert maintenant » utilise l'heure locale du restaurant.
+Les photos défectueuses sont ignorées.
+Un chargement échoué peut être relancé, et « Refresh » recharge toujours.
+Conseils récents en premier. Meilleure prise en charge des lecteurs d'écran.
+</fr-FR>
+<hi-IN>
+पिन कोड खोज सही देश ढूंढती है और दूर की जगहें छोड़ देती है।
+रेस्टोरेंट समीक्षाओं के आधार पर दिखाते हैं कि वे किस चीज़ में सबसे अच्छे हैं।
+गैर-लैटिन लिपि वाले नाम बने रहते हैं।
+Culver's का आज का फ्लेवर और समय ठीक किया गया।
+"अभी खुला" हर रेस्टोरेंट का स्थानीय समय इस्तेमाल करता है।
+खराब फ़ोटो छोड़ दी जाती हैं, और फ़ोटो हर स्क्रीन पर फिट होती हैं।
+विफल लोड दोबारा आज़माया जा सकता है, और "Refresh" हमेशा रीलोड करता है।
+नई टिप्स पहले। बेहतर स्क्रीन रीडर सपोर्ट।
+</hi-IN>
+<id>
+Pencarian kode pos menemukan negara yang tepat dan melewati tempat yang jauh.
+Restoran menampilkan keunggulannya berdasarkan ulasan.
+Nama dalam aksara non-Latin tetap dipertahankan.
+Rasa hari ini dan jam buka Culver's diperbaiki.
+"Buka sekarang" memakai waktu lokal restoran.
+Foto rusak dilewati, dan foto pas di layar apa pun.
+Pemuatan yang gagal bisa dicoba lagi, dan "Refresh" selalu memuat ulang.
+Tips terbaru di atas. Dukungan pembaca layar lebih baik.
+</id>
+<it-IT>
+La ricerca per CAP trova il paese giusto e salta i luoghi lontani.
+I ristoranti mostrano in cosa eccellono, in base alle recensioni.
+I nomi in alfabeti non latini vengono mantenuti.
+Corretti il gusto del giorno e gli orari di Culver's.
+"Aperto ora" usa l'ora locale di ogni ristorante.
+Le foto non funzionanti vengono saltate e si adattano a ogni schermo.
+I caricamenti falliti si possono riprovare e "Refresh" ricarica sempre.
+Consigli più recenti per primi. Miglior supporto agli screen reader.
+</it-IT>
+<ja-JP>
+郵便番号検索で正しい国が見つかり、遠く離れた場所は除外されます。
+レビューをもとに、各レストランの得意分野を表示します。
+ラテン文字以外の店名も保持されます。
+Culver'sの本日のフレーバーと営業時間を修正しました。
+「営業中」は各レストランの現地時間で判定します。
+読み込めない写真はスキップされ、どの画面サイズにも合わせて表示されます。
+読み込みに失敗しても再試行でき、「Refresh」は常に再読み込みします。
+新しいヒントが先頭に。スクリーンリーダー対応を改善しました。
+</ja-JP>
+<ko-KR>
+우편번호 검색이 올바른 국가를 찾고 먼 장소는 제외합니다.
+리뷰를 바탕으로 레스토랑의 강점을 보여 줍니다.
+라틴 문자가 아닌 이름도 유지됩니다.
+Culver's 오늘의 맛과 영업시간을 수정했습니다.
+'영업 중'은 각 레스토랑의 현지 시간을 사용합니다.
+깨진 사진은 건너뛰고 사진이 모든 화면에 맞춰집니다.
+로드에 실패하면 다시 시도할 수 있고 "Refresh"는 항상 새로고침합니다.
+최신 팁이 먼저 표시됩니다. 스크린 리더 지원이 향상되었습니다.
+</ko-KR>
+<ms>
+Carian poskod menemui negara yang betul dan melangkau tempat yang jauh.
+Restoran menunjukkan kelebihannya berdasarkan ulasan.
+Nama dalam tulisan bukan Latin dikekalkan.
+Perisa hari ini dan waktu buka Culver's dibaiki.
+"Buka sekarang" menggunakan waktu tempatan restoran.
+Foto rosak dilangkau, dan foto muat di mana-mana skrin.
+Muatan yang gagal boleh dicuba semula, dan "Refresh" sentiasa memuat semula.
+Tip terbaharu dahulu. Sokongan pembaca skrin lebih baik.
+</ms>
+<nl-NL>
+Zoeken op postcode vindt het juiste land en slaat verre plekken over.
+Restaurants tonen waar ze volgens reviews het best in zijn.
+Namen in niet-Latijns schrift blijven behouden.
+Smaak van de dag en openingstijden van Culver's gecorrigeerd.
+"Nu open" gebruikt de lokale tijd van het restaurant.
+Kapotte foto's worden overgeslagen en foto's passen op elk scherm.
+Mislukt laden kan opnieuw, en "Refresh" laadt altijd opnieuw.
+Nieuwste tips eerst. Betere ondersteuning voor schermlezers.
+</nl-NL>
+<no-NO>
+Søk på postnummer finner riktig land og hopper over steder langt unna.
+Restauranter viser hva de er best på, basert på anmeldelser.
+Navn med ikke-latinske tegn beholdes.
+Culver's dagens smak og åpningstider er rettet.
+«Åpent nå» bruker restaurantens lokale tid.
+Ødelagte bilder hoppes over, og bildene passer alle skjermer.
+Mislykket lasting kan prøves på nytt, og «Refresh» laster alltid inn på nytt.
+Nyeste tips først. Bedre støtte for skjermleser.
+</no-NO>
+<pl-PL>
+Wyszukiwanie po kodzie pocztowym znajduje właściwy kraj i pomija odległe miejsca.
+Restauracje pokazują, w czym są najlepsze, na podstawie opinii.
+Nazwy w alfabetach innych niż łaciński są zachowywane.
+Poprawiono smak dnia i godziny otwarcia Culver's.
+„Otwarte teraz” korzysta z czasu lokalnego restauracji.
+Uszkodzone zdjęcia są pomijane.
+Nieudane wczytanie można ponowić, a „Refresh” zawsze odświeża.
+Najnowsze wskazówki na górze. Lepsza obsługa czytników ekranu.
+</pl-PL>
+<pt-BR>
+A busca por CEP encontra o país certo e ignora lugares distantes.
+Os restaurantes mostram no que se destacam, com base nas avaliações.
+Nomes em alfabetos não latinos são mantidos.
+Sabor do dia e horários do Culver's corrigidos.
+"Aberto agora" usa o horário local de cada restaurante.
+Fotos com erro são puladas e as fotos se ajustam a qualquer tela.
+Carregamentos com falha podem ser repetidos, e "Refresh" sempre recarrega.
+Dicas mais novas primeiro. Melhor suporte a leitores de tela.
+</pt-BR>
+<pt-PT>
+A pesquisa por código postal encontra o país certo e ignora locais distantes.
+Os restaurantes mostram em que se destacam, com base nas avaliações.
+Nomes em alfabetos não latinos são mantidos.
+Sabor do dia e horários do Culver's corrigidos.
+"Aberto agora" usa a hora local de cada restaurante.
+Fotos com erro são ignoradas.
+Carregamentos falhados podem ser repetidos, e "Refresh" recarrega sempre.
+Dicas mais recentes primeiro. Melhor suporte a leitores de ecrã.
+</pt-PT>
+<ru-RU>
+Поиск по индексу находит нужную страну и пропускает далёкие места.
+Рестораны показывают, чем они лучше всего, по отзывам.
+Названия на нелатинских алфавитах сохраняются.
+Исправлены вкус дня и часы работы Culver's.
+«Открыто сейчас» учитывает местное время ресторана.
+Битые фото пропускаются, а фото подстраиваются под любой экран.
+Неудачную загрузку можно повторить, а «Refresh» всегда обновляет.
+Новые советы сверху. Улучшена поддержка программ чтения с экрана.
+</ru-RU>
+<sv-SE>
+Sökning på postnummer hittar rätt land och hoppar över platser långt bort.
+Restauranger visar vad de är bäst på, utifrån recensioner.
+Namn med icke-latinska tecken behålls.
+Culver's dagens smak och öppettider är rättade.
+"Öppet nu" använder restaurangens lokala tid.
+Trasiga foton hoppas över och foton passar alla skärmar.
+Misslyckad laddning kan göras om, och "Refresh" laddar alltid om.
+Nyaste tipsen först. Bättre stöd för skärmläsare.
+</sv-SE>
+<th>
+ค้นหาด้วยรหัสไปรษณีย์พบประเทศที่ถูกต้องและข้ามสถานที่ที่อยู่ไกล
+ร้านอาหารแสดงจุดเด่นของร้านจากรีวิว
+ชื่อร้านที่ไม่ใช่อักษรละตินจะถูกเก็บไว้
+แก้ไขรสชาติประจำวันและเวลาเปิดของ Culver's
+"เปิดอยู่ตอนนี้" ใช้เวลาท้องถิ่นของร้าน
+ข้ามรูปที่เสีย และรูปพอดีกับทุกหน้าจอ
+โหลดไม่สำเร็จลองใหม่ได้ และ "Refresh" โหลดใหม่เสมอ
+เคล็ดลับใหม่สุดขึ้นก่อน รองรับโปรแกรมอ่านหน้าจอดีขึ้น
+</th>
+<tr-TR>
+Posta kodu araması doğru ülkeyi bulur ve uzak yerleri atlar.
+Restoranlar, yorumlara göre en iyi oldukları yönü gösterir.
+Latin olmayan alfabelerdeki adlar korunur.
+Culver's günün lezzeti ve çalışma saatleri düzeltildi.
+"Şimdi açık" her restoranın yerel saatini kullanır.
+Bozuk fotoğraflar atlanır ve fotoğraflar her ekrana sığar.
+Başarısız yüklemeler yeniden denenebilir, "Refresh" her zaman yeniler.
+En yeni ipuçları önce. Daha iyi ekran okuyucu desteği.
+</tr-TR>
+<uk>
+Пошук за індексом знаходить потрібну країну й пропускає далекі місця.
+Ресторани показують, у чому вони найкращі, за відгуками.
+Назви нелатинськими алфавітами зберігаються.
+Виправлено смак дня та години роботи Culver's.
+«Відчинено зараз» враховує місцевий час ресторану.
+Пошкоджені фото пропускаються, а фото підлаштовуються під будь-який екран.
+Невдале завантаження можна повторити, а «Refresh» завжди оновлює.
+Нові поради зверху. Краща підтримка програм читання з екрана.
+</uk>
+<vi>
+Tìm theo mã bưu chính tìm đúng quốc gia và bỏ qua nơi ở xa.
+Nhà hàng hiển thị điểm mạnh của mình dựa trên đánh giá.
+Tên viết bằng chữ không phải Latinh được giữ lại.
+Đã sửa hương vị trong ngày và giờ mở cửa của Culver's.
+"Đang mở cửa" dùng giờ địa phương của nhà hàng.
+Ảnh lỗi được bỏ qua và ảnh vừa với mọi màn hình.
+Có thể thử lại khi tải thất bại, và "Refresh" luôn tải lại.
+Mẹo mới nhất lên đầu. Hỗ trợ trình đọc màn hình tốt hơn.
+</vi>
+<zh-CN>
+按邮政编码搜索可找到正确的国家，并跳过距离过远的地点。
+餐厅会根据评价显示其最擅长之处。
+保留非拉丁文字的餐厅名称。
+修正了 Culver's 的每日口味和营业时间。
+“营业中”使用每家餐厅的当地时间。
+无法加载的照片会被跳过，照片适配任何屏幕。
+加载失败可重试，“Refresh”始终会重新加载。
+最新提示优先显示。改进了屏幕阅读器支持。
+</zh-CN>
+<zh-TW>
+依郵遞區號搜尋可找到正確的國家，並略過距離過遠的地點。
+餐廳會根據評論顯示其最擅長之處。
+保留非拉丁文字的餐廳名稱。
+修正 Culver's 的每日口味與營業時間。
+「營業中」使用每家餐廳的當地時間。
+無法載入的相片會被略過，相片也能符合任何螢幕。
+載入失敗可重試，「Refresh」一律會重新載入。
+最新提示優先顯示。改善螢幕閱讀器支援。
+</zh-TW>

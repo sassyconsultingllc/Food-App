@@ -1,0 +1,8 @@
+A busca por CEP encontra o país certo e ignora lugares distantes.
+Os restaurantes mostram no que se destacam, com base nas avaliações.
+Nomes em alfabetos não latinos são mantidos.
+Sabor do dia e horários do Culver's corrigidos.
+"Aberto agora" usa o horário local de cada restaurante.
+Fotos com erro são puladas e as fotos se ajustam a qualquer tela.
+Carregamentos com falha podem ser repetidos, e "Refresh" sempre recarrega.
+Dicas mais novas primeiro. Melhor suporte a leitores de tela.
