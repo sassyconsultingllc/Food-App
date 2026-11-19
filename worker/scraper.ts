@@ -497,18 +497,29 @@ async function fetchGooglePlaceDetails(
   try {
     // opening_hours added so the "open now" badge actually works — previously
     // the worker never requested hours and every restaurant showed "Hours unknown".
-    // utc_offset_minutes lets open-now run on the RESTAURANT's clock instead
+    // utc_offset lets open-now run on the RESTAURANT's clock instead
     // of the device's (wrong whenever the user searches another timezone).
     // reviews + editorial_summary feed the aspect verdicts ("Great oceanside
     // coffee"). Both are Atmosphere-tier fields, so this call bills at the
     // Atmosphere rate; it is still one call per place, as before.
-    const fields = 'photos,website,formatted_phone_number,url,opening_hours,utc_offset_minutes,reviews,editorial_summary';
+    // The legacy Details API only accepts the field name `utc_offset` (its
+    // value is in minutes). Asking for `utc_offset_minutes` fails the WHOLE
+    // call with INVALID_REQUEST, which silently dropped photos, hours and
+    // reviews for every place until 2026-11-18.
+    const fields = 'photos,website,formatted_phone_number,url,opening_hours,utc_offset,reviews,editorial_summary';
     const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=${fields}&key=${apiKey}`;
     const res = await fetchWithTimeout(url);
     if (!res.ok) return null;
     const data = await res.json() as any;
     const d = data.result;
-    if (!d) return null;
+    if (!d) {
+      // Google answers HTTP 200 with a status like INVALID_REQUEST or
+      // REQUEST_DENIED; log it so a bad field list or billing lapse shows up.
+      if (data.status && data.status !== 'OK') {
+        console.warn(`[Scraper] Place Details ${data.status}: ${data.error_message ?? ''}`);
+      }
+      return null;
+    }
     // Cap at 10 photo refs (CLAUDE.md Bug 1) so later /api/photo proxy
     // hits stay bounded. Place Details itself is one billed call either way.
     const photos = (d.photos || []).slice(0, 10).map((p: any) =>
@@ -519,7 +530,9 @@ async function fetchGooglePlaceDetails(
     const menuUrl = website || undefined;
     const hours = parseGoogleWeekdayText(d.opening_hours?.weekday_text);
     const utcOffsetMinutes =
-      typeof d.utc_offset_minutes === 'number' ? d.utc_offset_minutes : undefined;
+      typeof d.utc_offset_minutes === 'number' ? d.utc_offset_minutes
+      : typeof d.utc_offset === 'number' ? d.utc_offset
+      : undefined;
     const reviews = Array.isArray(d.reviews)
       ? d.reviews
           .filter((r: any) => typeof r?.text === 'string' && r.text.trim())
